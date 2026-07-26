@@ -9,11 +9,13 @@ import NextSteps from './components/NextSteps';
 import ServiceInvite from './components/ServiceInvite';
 import ActivitiesPage from './components/ActivitiesPage';
 import TransformationLifePage from './components/TransformationLifePage';
+import AdminPortal from './components/AdminPortal';
 import Footer from './components/Footer';
 
-type View = 'home' | 'activities' | 'transformation-life';
+type View = 'home' | 'activities' | 'transformation-life' | 'admin';
 
 const getViewFromPath = (path: string): View => {
+  if (path.includes('/admin')) return 'admin';
   if (path.includes('/activities')) return 'activities';
   if (path.includes('/transformation-life')) return 'transformation-life';
   return 'home';
@@ -79,6 +81,10 @@ const App: React.FC = () => {
     handleLocationChange();
   };
 
+  if (currentView === 'admin') {
+    return <AdminPortal onNavigate={navigate} />;
+  }
+
   const renderContent = () => {
     switch (currentView) {
       case 'activities': 
@@ -111,3 +117,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+

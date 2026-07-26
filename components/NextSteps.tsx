@@ -1,8 +1,21 @@
 
 import React, { useState } from 'react';
+import { collection, addDoc } from 'firebase/firestore';
+import { db } from '../firebase';
+import { CheckCircle, Loader2 } from 'lucide-react';
 
 const NextSteps: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [interestedIn, setInterestedIn] = useState('Join Our Family');
+  const [message, setMessage] = useState('');
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   const steps = [
     { id: 1, title: 'Join Our Family', desc: 'Find a place where you truly belong.' },
@@ -10,6 +23,53 @@ const NextSteps: React.FC = () => {
     { id: 3, title: 'Be Part of a Connect Group', desc: 'Engage in supportive, life-changing relationships.' },
     { id: 4, title: 'Live a Transformation Life', desc: "Reflecting God's glory in your world." },
   ];
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!firstName.trim() || !lastName.trim() || !email.trim()) {
+      setErrorMsg('Please fill in your first name, last name, and email.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMsg('');
+
+    try {
+      await addDoc(collection(db, 'submissions'), {
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: email.trim().toLowerCase(),
+        phone: phone.trim(),
+        interestedIn,
+        message: message.trim(),
+        status: 'new',
+        createdAt: new Date().toISOString(),
+      });
+
+      setIsSubmitting(false);
+      setIsSubmitted(true);
+    } catch (err: any) {
+      console.error('Error adding submission to database:', err);
+      setIsSubmitting(false);
+      setErrorMsg('Unable to save your request right now. Please try again.');
+    }
+  };
+
+  const resetForm = () => {
+    setFirstName('');
+    setLastName('');
+    setEmail('');
+    setPhone('');
+    setInterestedIn('Join Our Family');
+    setMessage('');
+    setIsSubmitted(false);
+    setErrorMsg('');
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    resetForm();
+  };
 
   return (
     <section id="the-journey" className="py-24 bg-white overflow-hidden">
@@ -24,14 +84,14 @@ const NextSteps: React.FC = () => {
                 Whether you are just starting or already matured in your relationship with Christ and looking for a place to call home, we invite you to join us in this wonderful, life changing journey. 
               </p>
               <p className="text-xl text-gray-500 leading-relaxed font-medium">
-                We invite you to join us as we follow Christ, aligning our thoughts and will with His.</p>
+                We invite you to join us as we follow Christ, aligning our thoughts and will with His.
+              </p>
             </div>
           </div>
 
           <div className="relative">
             {/* The Red Card Container */}
             <div className="bg-[#a52424] p-10 md:p-14 rounded-[3.5rem] text-white shadow-[0_20px_50px_rgba(0,0,0,0.15)] relative overflow-hidden">
-              {/* Decorative abstract circle as seen in image */}
               <div className="absolute -bottom-24 -right-24 w-80 h-80 bg-white/5 rounded-full pointer-events-none"></div>
               <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-gradient-to-br from-white/5 to-transparent pointer-events-none"></div>
               
@@ -67,61 +127,144 @@ const NextSteps: React.FC = () => {
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
           <div className="bg-white rounded-[2.5rem] w-full max-w-2xl max-h-[90vh] overflow-y-auto relative shadow-2xl">
             <button 
-              onClick={() => setIsModalOpen(false)}
+              onClick={handleCloseModal}
               className="absolute top-6 right-6 text-gray-400 hover:text-gray-900 transition-colors"
             >
               <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
             
             <div className="p-8 md:p-12">
-              <h3 className="text-3xl font-black text-gray-900 mb-4 uppercase tracking-tighter">Start The Journey</h3>
-              <p className="text-gray-600 mb-8 text-lg">
-                Tell us a little about yourself and which step of the journey you're interested in taking. We'd love to connect and welcome you to the family!
-              </p>
-
-              <form className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">First Name</label>
-                    <input type="text" className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-church-red focus:border-transparent outline-none transition-all" placeholder="John" />
+              {isSubmitted ? (
+                <div className="text-center py-8">
+                  <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <CheckCircle className="w-12 h-12" />
                   </div>
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">Last Name</label>
-                    <input type="text" className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-church-red focus:border-transparent outline-none transition-all" placeholder="Doe" />
-                  </div>
+                  <h3 className="text-3xl font-black text-gray-900 mb-4 uppercase tracking-tighter">
+                    Welcome to the Family!
+                  </h3>
+                  <p className="text-gray-600 text-lg mb-8 max-w-md mx-auto">
+                    Thank you, <span className="font-bold text-gray-900">{firstName}</span>! Your request has been saved and sent directly to the TCC team. Someone will be in touch with you shortly.
+                  </p>
+                  <button
+                    onClick={handleCloseModal}
+                    className="bg-[#a52424] text-white px-8 py-4 rounded-2xl font-black text-lg hover:bg-red-700 transition-all shadow-lg uppercase tracking-wider"
+                  >
+                    Done
+                  </button>
                 </div>
+              ) : (
+                <>
+                  <h3 className="text-3xl font-black text-gray-900 mb-4 uppercase tracking-tighter">Start The Journey</h3>
+                  <p className="text-gray-600 mb-8 text-lg">
+                    Tell us a little about yourself and which step of the journey you're interested in taking. We'd love to connect and welcome you to the family!
+                  </p>
 
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">Email Address</label>
-                  <input type="email" className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-church-red focus:border-transparent outline-none transition-all" placeholder="john@example.com" />
-                </div>
+                  {errorMsg && (
+                    <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-2xl text-sm font-medium">
+                      {errorMsg}
+                    </div>
+                  )}
 
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">Interested In</label>
-                  <select className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-church-red focus:border-transparent outline-none transition-all appearance-none">
-                    <option>Join Our Family</option>
-                    <option>Impact Life Journey</option>
-                    <option>Connect Groups</option>
-                    <option>Service Opportunities</option>
-                  </select>
-                </div>
+                  <form onSubmit={handleSubmit} className="space-y-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">
+                          First Name <span className="text-red-500">*</span>
+                        </label>
+                        <input 
+                          type="text" 
+                          required
+                          value={firstName}
+                          onChange={(e) => setFirstName(e.target.value)}
+                          className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all" 
+                          placeholder="John" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">
+                          Last Name <span className="text-red-500">*</span>
+                        </label>
+                        <input 
+                          type="text" 
+                          required
+                          value={lastName}
+                          onChange={(e) => setLastName(e.target.value)}
+                          className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all" 
+                          placeholder="Doe" 
+                        />
+                      </div>
+                    </div>
 
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">Any Message?</label>
-                  <textarea rows={4} className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-church-red focus:border-transparent outline-none transition-all" placeholder="I'd love to know more about..."></textarea>
-                </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">
+                          Email Address <span className="text-red-500">*</span>
+                        </label>
+                        <input 
+                          type="email" 
+                          required
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all" 
+                          placeholder="john@example.com" 
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">
+                          Phone Number
+                        </label>
+                        <input 
+                          type="tel" 
+                          value={phone}
+                          onChange={(e) => setPhone(e.target.value)}
+                          className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all" 
+                          placeholder="+27 82 123 4567" 
+                        />
+                      </div>
+                    </div>
 
-                <button 
-                  type="button"
-                  onClick={() => {
-                    alert('Thank you! Someone from TCC will reach out to you shortly.');
-                    setIsModalOpen(false);
-                  }}
-                  className="w-full bg-church-red text-white py-5 rounded-2xl font-black text-xl hover:bg-red-700 transition-all shadow-lg shadow-red-500/20 uppercase tracking-widest"
-                >
-                  Send Journey Request
-                </button>
-              </form>
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">Interested In</label>
+                      <select 
+                        value={interestedIn}
+                        onChange={(e) => setInterestedIn(e.target.value)}
+                        className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all appearance-none"
+                      >
+                        <option value="Join Our Family">Join Our Family</option>
+                        <option value="Impact Life Journey">Impact Life Journey</option>
+                        <option value="Connect Groups">Connect Groups</option>
+                        <option value="Service Opportunities">Service Opportunities</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">Any Message?</label>
+                      <textarea 
+                        rows={4} 
+                        value={message}
+                        onChange={(e) => setMessage(e.target.value)}
+                        className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all" 
+                        placeholder="I'd love to know more about..."
+                      ></textarea>
+                    </div>
+
+                    <button 
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="w-full bg-[#a52424] text-white py-5 rounded-2xl font-black text-xl hover:bg-red-700 transition-all shadow-lg shadow-red-500/20 uppercase tracking-widest flex items-center justify-center space-x-2 disabled:opacity-60"
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <Loader2 className="w-6 h-6 animate-spin" />
+                          <span>Saving to TCC System...</span>
+                        </>
+                      ) : (
+                        <span>Send Journey Request</span>
+                      )}
+                    </button>
+                  </form>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -131,3 +274,4 @@ const NextSteps: React.FC = () => {
 };
 
 export default NextSteps;
+

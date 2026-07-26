@@ -43,6 +43,11 @@ const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
               <li><a href="/activities" onClick={(e) => handleNav(e, '/activities')} className="hover:text-white transition-colors">Weekly Activities</a></li>
               <li><a href="/#about" onClick={(e) => handleNav(e, '/')} className="hover:text-white transition-colors">Our Vision</a></li>
               <li><a href="/#ministries" onClick={(e) => handleNav(e, '/')} className="hover:text-white transition-colors">Ministries</a></li>
+              <li>
+                <a href="/admin" onClick={(e) => handleNav(e, '/admin')} className="text-[#a52424] hover:text-red-400 transition-colors inline-flex items-center space-x-1">
+                  <span>TCC Admin Portal</span>
+                </a>
+              </li>
             </ul>
           </div>
 

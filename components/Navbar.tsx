@@ -65,6 +65,13 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentView }) => {
                 {item.label}
               </a>
             ))}
+            <a
+              href="/admin"
+              onClick={(e) => handleLinkClick(e, '/admin')}
+              className="bg-[#d32f2f] text-white px-3.5 py-1.5 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-red-700 transition-all shadow-md"
+            >
+              Admin
+            </a>
           </div>
 
           <div className="md:hidden flex items-center">
@@ -92,6 +99,13 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentView }) => {
               {item.label}
             </a>
           ))}
+          <a
+            href="/admin"
+            onClick={(e) => handleLinkClick(e, '/admin')}
+            className="block px-4 py-3 text-[#d32f2f] hover:text-red-700 font-black uppercase tracking-widest text-sm"
+          >
+            TCC Admin Portal
+          </a>
         </div>
       </div>
     </nav>

@@ -1,0 +1,33 @@
+{
+  "entities": {
+    "submissions": {
+      "title": "I'm New Submissions",
+      "description": "Form submissions from I'm New Here connect cards",
+      "type": "object",
+      "properties": {
+        "firstName": { "type": "string" },
+        "lastName": { "type": "string" },
+        "email": { "type": "string" },
+        "phone": { "type": "string" },
+        "interestedIn": { "type": "string" },
+        "message": { "type": "string" },
+        "status": { "type": "string", "enum": ["new", "contacted", "followed-up", "archived"] },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["firstName", "lastName", "email", "interestedIn", "status", "createdAt"]
+    },
+    "admins": {
+      "title": "Admin Users",
+      "description": "Authorized TCC Admin team users",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "role"]
+    }
+  }
+}
