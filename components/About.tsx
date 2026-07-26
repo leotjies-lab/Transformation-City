@@ -38,7 +38,7 @@ const About: React.FC = () => {
 
           <div className="relative">
             <div className="absolute -top-10 -left-10 w-32 h-32 bg-yellow-400/20 rounded-full blur-3xl"></div>
-            <div className="bg-gray-900 text-white p-8 md:p-12 rounded-3xl relative z-10 shadow-2xl overflow-hidden">
+            <div className="bg-gray-900 text-white p-8 md:p-12 rounded-3xl relative z-10 shadow-[0_20px_50px_rgba(0,0,0,0.15)] overflow-hidden">
               <div className="absolute top-0 right-0 w-40 h-40 bg-church-red/10 rounded-full -translate-y-1/2 translate-x-1/2"></div>
               <h3 className="text-3xl font-bold mb-6 italic">The Transformation Life</h3>
               <p className="text-gray-300 leading-relaxed mb-6">
@@ -48,7 +48,7 @@ const About: React.FC = () => {
                 "Fellowship is more than a social association; it is a discipline of truly loving and supporting our fellow believers."
               </div>
             </div>
-            <div className="absolute -bottom-6 -right-6 w-full h-full border-2 border-church-red rounded-3xl -z-0"></div>
+            <div className="absolute -bottom-0 -right-0 w-full h-full border-2 border-church-red rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.15)] overflow-hidden"></div>
           </div>
         </div>
       </div>

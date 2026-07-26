@@ -39,3 +39,11 @@ export interface AdminUser {
   email: string;
   displayName?: string;
 }
+
+export interface AdminMember {
+  id?: string;
+  name: string;
+  email: string;
+  role: string;
+  createdAt: string;
+}

@@ -14,10 +14,11 @@ import {
   doc, 
   updateDoc, 
   deleteDoc,
+  addDoc,
   serverTimestamp
 } from 'firebase/firestore';
 import { auth, db } from '../firebase';
-import { FormSubmission, SubmissionStatus } from '../types';
+import { FormSubmission, SubmissionStatus, AdminMember } from '../types';
 import { 
   ShieldCheck, 
   LogOut, 
@@ -40,7 +41,10 @@ import {
   Users,
   Inbox,
   Lock,
-  ArrowLeft
+  ArrowLeft,
+  UserPlus,
+  Shield,
+  Key
 } from 'lucide-react';
 
 interface AdminPortalProps {
@@ -67,10 +71,21 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
   const [authSuccess, setAuthSuccess] = useState('');
   const [submittingAuth, setSubmittingAuth] = useState(false);
 
+  // Active Navigation Tab
+  const [activeTab, setActiveTab] = useState<'submissions' | 'admins'>('submissions');
+
   // Submissions state
   const [submissions, setSubmissions] = useState<FormSubmission[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   const [fetchError, setFetchError] = useState('');
+
+  // Admin Team state
+  const [adminsList, setAdminsList] = useState<AdminMember[]>([]);
+  const [newAdminName, setNewAdminName] = useState('');
+  const [newAdminEmail, setNewAdminEmail] = useState('');
+  const [newAdminRole, setNewAdminRole] = useState('Admin');
+  const [addingAdmin, setAddingAdmin] = useState(false);
+  const [addAdminSuccess, setAddAdminSuccess] = useState('');
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -93,7 +108,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
     return () => unsubscribe();
   }, []);
 
-  // Listen to Firestore Submissions when authenticated or logged in via admin session
+  // Listen to Firestore Submissions when logged in
   useEffect(() => {
     if (!isLoggedIn) return;
 
@@ -129,6 +144,77 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
       setLoadingData(false);
     }
   }, [isLoggedIn]);
+
+  // Listen to Firestore Admins collection when logged in
+  useEffect(() => {
+    if (!isLoggedIn) return;
+
+    try {
+      const q = query(collection(db, 'admins'), orderBy('createdAt', 'desc'));
+      const unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          const list: AdminMember[] = [];
+          snapshot.forEach((docSnap) => {
+            list.push({
+              id: docSnap.id,
+              ...(docSnap.data() as Omit<AdminMember, 'id'>)
+            });
+          });
+          setAdminsList(list);
+        },
+        (error) => {
+          console.error('Error fetching admins from Firestore:', error);
+        }
+      );
+
+      return () => unsubscribe();
+    } catch (err: any) {
+      console.error(err);
+    }
+  }, [isLoggedIn]);
+
+  // Handle Granting Admin Access
+  const handleAddAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newAdminEmail.trim()) return;
+
+    setAddingAdmin(true);
+    setAddAdminSuccess('');
+
+    try {
+      await addDoc(collection(db, 'admins'), {
+        name: newAdminName.trim() || newAdminEmail.trim().split('@')[0],
+        email: newAdminEmail.trim().toLowerCase(),
+        role: newAdminRole,
+        createdAt: new Date().toISOString()
+      });
+
+      setAddAdminSuccess(`Granted admin access to ${newAdminEmail.trim()}!`);
+      setNewAdminName('');
+      setNewAdminEmail('');
+      setNewAdminRole('Admin');
+      
+      setTimeout(() => setAddAdminSuccess(''), 5000);
+    } catch (err) {
+      console.error('Error granting admin access:', err);
+      alert('Failed to save admin user. Please try again.');
+    } finally {
+      setAddingAdmin(false);
+    }
+  };
+
+  // Handle Removing Admin Access
+  const handleRemoveAdmin = async (adminId: string, targetEmail: string) => {
+    if (!window.confirm(`Are you sure you want to revoke admin access for ${targetEmail}?`)) return;
+
+    try {
+      await deleteDoc(doc(db, 'admins', adminId));
+    } catch (err) {
+      console.error('Error removing admin:', err);
+      alert('Failed to remove admin user.');
+    }
+  };
 
   // Auth Handler
   const handleAuthSubmit = async (e: React.FormEvent) => {
@@ -489,7 +575,191 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
       {/* Main Content Area */}
       <main className="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         
-        {/* Metric Cards */}
+        {/* Navigation Tabs */}
+        <div className="flex border-b border-white/10 space-x-2">
+          <button
+            onClick={() => setActiveTab('submissions')}
+            className={`px-6 py-3.5 font-black text-xs sm:text-sm uppercase tracking-wider rounded-t-2xl transition-all flex items-center space-x-2.5 ${
+              activeTab === 'submissions'
+                ? 'bg-gray-900 text-white border-t-2 border-[#a52424] shadow-lg'
+                : 'text-gray-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Inbox className="w-4 h-4 text-[#a52424]" />
+            <span>Form Submissions ({submissions.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('admins')}
+            className={`px-6 py-3.5 font-black text-xs sm:text-sm uppercase tracking-wider rounded-t-2xl transition-all flex items-center space-x-2.5 ${
+              activeTab === 'admins'
+                ? 'bg-gray-900 text-white border-t-2 border-[#a52424] shadow-lg'
+                : 'text-gray-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <span>Manage Admin Team ({adminsList.length})</span>
+          </button>
+        </div>
+
+        {activeTab === 'admins' ? (
+          /* ADMIN TEAM MANAGEMENT TAB */
+          <div className="space-y-8">
+            {/* Guide Card */}
+            <div className="bg-gradient-to-r from-red-950/40 via-gray-900 to-gray-900 border border-red-500/20 rounded-3xl p-6 sm:p-8 space-y-4">
+              <div className="flex items-start space-x-4">
+                <div className="w-12 h-12 bg-red-500/10 text-red-400 rounded-2xl flex items-center justify-center border border-red-500/20 flex-shrink-0">
+                  <Key className="w-6 h-6" />
+                </div>
+                <div className="space-y-2">
+                  <h2 className="text-xl font-black text-white uppercase tracking-tight">How to Grant Access to Team Members</h2>
+                  <p className="text-sm text-gray-300 leading-relaxed">
+                    Add authorized team members below to grant them access to manage "I'm New Here" card submissions and follow-ups.
+                  </p>
+                  <div className="bg-gray-950/80 border border-white/10 rounded-2xl p-4 text-xs space-y-2 text-gray-300">
+                    <div className="font-bold text-white uppercase tracking-wider text-[11px] flex items-center space-x-1.5">
+                      <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Login Instructions for New Admin Users:</span>
+                    </div>
+                    <ol className="list-decimal list-inside space-y-1 text-gray-400">
+                      <li>Direct team members to the Admin Portal link: <span className="text-red-400 font-mono font-bold">{window.location.origin}/admin</span></li>
+                      <li>They can sign in with their added email using master password <span className="bg-white/10 text-white font-mono px-2 py-0.5 rounded font-bold">TccAdmin2026!</span></li>
+                      <li>Alternatively, they can click <strong className="text-white">"Create New Admin Account"</strong> on the login page using their email address.</li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Add New Admin Form */}
+            <div className="bg-gray-900 border border-white/10 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
+              <div className="flex items-center space-x-3 border-b border-white/10 pb-4">
+                <UserPlus className="w-5 h-5 text-red-400" />
+                <h3 className="text-lg font-black uppercase tracking-wider text-white">Grant Access to New Team Member</h3>
+              </div>
+
+              {addAdminSuccess && (
+                <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 px-4 py-3 rounded-2xl text-sm flex items-center space-x-2">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                  <span>{addAdminSuccess}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleAddAdmin} className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Full Name</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Pastor John Doe"
+                    value={newAdminName}
+                    onChange={(e) => setNewAdminName(e.target.value)}
+                    className="w-full bg-gray-950 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#a52424]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Email Address</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="e.g. john@tccchurch.org"
+                    value={newAdminEmail}
+                    onChange={(e) => setNewAdminEmail(e.target.value)}
+                    className="w-full bg-gray-950 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#a52424]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">Role / Title</label>
+                  <select
+                    value={newAdminRole}
+                    onChange={(e) => setNewAdminRole(e.target.value)}
+                    className="w-full bg-gray-950 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#a52424]"
+                  >
+                    <option value="Admin">Administrator</option>
+                    <option value="Pastor / Leader">Pastor / Church Leader</option>
+                    <option value="Follow-Up Team">Follow-Up Coordinator</option>
+                    <option value="Connect Groups Lead">Connect Groups Lead</option>
+                  </select>
+                </div>
+
+                <div className="sm:col-span-3 flex justify-end pt-2">
+                  <button
+                    type="submit"
+                    disabled={addingAdmin}
+                    className="bg-[#a52424] hover:bg-red-700 text-white font-black px-6 py-3.5 rounded-2xl text-xs uppercase tracking-widest transition-all flex items-center space-x-2 shadow-lg disabled:opacity-50"
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    <span>{addingAdmin ? 'Granting Access...' : 'Grant Admin Access'}</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Admin Team Members Directory */}
+            <div className="bg-gray-900 border border-white/10 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
+              <div className="flex items-center justify-between border-b border-white/10 pb-4">
+                <div className="flex items-center space-x-3">
+                  <Users className="w-5 h-5 text-emerald-400" />
+                  <h3 className="text-lg font-black uppercase tracking-wider text-white">Authorized Admin Team Members ({adminsList.length})</h3>
+                </div>
+              </div>
+
+              {adminsList.length === 0 ? (
+                <div className="text-center py-8 text-gray-400 text-sm">
+                  No additional admins listed yet. Master admin access is active using email & master password.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-gray-950 border-b border-white/10 text-[11px] font-black uppercase tracking-wider text-gray-400">
+                        <th className="py-3.5 px-4">Name</th>
+                        <th className="py-3.5 px-4">Email Address</th>
+                        <th className="py-3.5 px-4">Role</th>
+                        <th className="py-3.5 px-4">Date Added</th>
+                        <th className="py-3.5 px-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5 text-sm">
+                      {adminsList.map((member) => (
+                        <tr key={member.id} className="hover:bg-white/[0.02]">
+                          <td className="py-4 px-4 font-bold text-white flex items-center space-x-2">
+                            <div className="w-8 h-8 bg-red-500/20 text-red-400 rounded-full flex items-center justify-center font-black text-xs border border-red-500/30">
+                              {member.name.charAt(0).toUpperCase()}
+                            </div>
+                            <span>{member.name}</span>
+                          </td>
+                          <td className="py-4 px-4 text-gray-300 font-mono text-xs">{member.email}</td>
+                          <td className="py-4 px-4">
+                            <span className="bg-white/5 border border-white/10 text-emerald-400 text-xs px-2.5 py-1 rounded-full font-bold">
+                              {member.role || 'Admin'}
+                            </span>
+                          </td>
+                          <td className="py-4 px-4 text-gray-400 text-xs">
+                            {member.createdAt ? new Date(member.createdAt).toLocaleDateString() : 'Active'}
+                          </td>
+                          <td className="py-4 px-4 text-right">
+                            <button
+                              onClick={() => member.id && handleRemoveAdmin(member.id, member.email)}
+                              className="bg-red-500/10 hover:bg-red-500/20 text-red-400 px-3 py-1.5 rounded-xl text-xs font-bold border border-red-500/20 transition-all inline-flex items-center space-x-1"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Revoke Access</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Metric Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
           <div className="bg-gray-900 border border-white/10 p-6 rounded-3xl shadow-xl flex items-center space-x-5">
             <div className="w-14 h-14 bg-red-500/10 text-[#a52424] rounded-2xl flex items-center justify-center border border-red-500/20">
@@ -727,6 +997,8 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
               </table>
             </div>
           </div>
+        )}
+        </>
         )}
       </main>
 
