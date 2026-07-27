@@ -28,6 +28,38 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["email", "role"]
+    },
+    "events": {
+      "title": "TCC Events",
+      "description": "Upcoming and recurring calendar events for Transformation City Church",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "date": { "type": "string", "description": "Date in YYYY-MM-DD format" },
+        "time": { "type": "string" },
+        "location": { "type": "string" },
+        "category": { "type": "string" },
+        "description": { "type": "string" },
+        "color": { "type": "string" },
+        "recurrence": { "type": "string", "enum": ["none", "weekly", "monthly", "yearly"] },
+        "cancelledDates": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "date"]
+    }
+  },
+  "firestore": {
+    "/submissions/{submissionId}": {
+      "schema": { "$ref": "#/entities/submissions" },
+      "description": "Form submissions"
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/admins" },
+      "description": "Admin users"
+    },
+    "/events/{eventId}": {
+      "schema": { "$ref": "#/entities/events" },
+      "description": "Calendar events for TCC"
     }
   }
 }

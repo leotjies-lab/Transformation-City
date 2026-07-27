@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
@@ -18,7 +18,8 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { auth, db } from '../firebase';
-import { FormSubmission, SubmissionStatus, AdminMember } from '../types';
+import { FormSubmission, SubmissionStatus, AdminMember, TCCEvent } from '../types';
+import { DEFAULT_INITIAL_EVENTS } from './EventCalendar';
 import { 
   ShieldCheck, 
   LogOut, 
@@ -44,7 +45,16 @@ import {
   ArrowLeft,
   UserPlus,
   Shield,
-  Key
+  Key,
+  Calendar,
+  CalendarDays,
+  Plus,
+  MapPin,
+  Tag,
+  Repeat,
+  Ban,
+  CalendarCheck,
+  Check
 } from 'lucide-react';
 
 interface AdminPortalProps {
@@ -72,7 +82,40 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
   const [submittingAuth, setSubmittingAuth] = useState(false);
 
   // Active Navigation Tab
-  const [activeTab, setActiveTab] = useState<'submissions' | 'admins'>('submissions');
+  const [activeTab, setActiveTab] = useState<'submissions' | 'admins' | 'events'>('events');
+
+  // Events state
+  const [eventsList, setEventsList] = useState<TCCEvent[]>([]);
+  const [loadingEvents, setLoadingEvents] = useState(true);
+  const [isEventModalOpen, setIsEventModalOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<TCCEvent | null>(null);
+
+  // Add / Edit Event form state
+  const [eventTitle, setEventTitle] = useState('');
+  const [eventDate, setEventDate] = useState('');
+  const [eventTime, setEventTime] = useState('');
+  const [eventLocation, setEventLocation] = useState('');
+  const [eventCategory, setEventCategory] = useState('Sunday Service');
+  const [eventDescription, setEventDescription] = useState('');
+  const [eventColor, setEventColor] = useState('#d32f2f');
+  const [eventRecurrence, setEventRecurrence] = useState<'none' | 'weekly' | 'monthly' | 'yearly'>('weekly');
+  const [eventRecurrenceEndType, setEventRecurrenceEndType] = useState<'never' | 'until_date' | 'count'>('never');
+  const [eventRecurrenceEndDate, setEventRecurrenceEndDate] = useState('');
+  const [eventRecurrenceCount, setEventRecurrenceCount] = useState<number | ''>('');
+  const [savingEvent, setSavingEvent] = useState(false);
+  const [eventSuccess, setEventSuccess] = useState('');
+
+  // Weekly Cancellations State
+  const [selectedCancelEvent, setSelectedCancelEvent] = useState<TCCEvent | null>(null);
+  const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
+  const [updatingCancellation, setUpdatingCancellation] = useState(false);
+
+  // Occurrences View State
+  const [eventsViewMode, setEventsViewMode] = useState<'occurrences' | 'master'>('occurrences');
+  const [occurrenceSearch, setOccurrenceSearch] = useState('');
+  const [occurrenceCategory, setOccurrenceCategory] = useState('All');
+  const [occurrenceStatus, setOccurrenceStatus] = useState<'all' | 'active' | 'cancelled'>('all');
+  const [occurrenceDaysHorizon, setOccurrenceDaysHorizon] = useState<number>(60);
 
   // Submissions state
   const [submissions, setSubmissions] = useState<FormSubmission[]>([]);
@@ -173,6 +216,437 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
       console.error(err);
     }
   }, [isLoggedIn]);
+
+  // Listen to Firestore Events collection when logged in
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    setLoadingEvents(true);
+
+    try {
+      const q = query(collection(db, 'events'), orderBy('date', 'asc'));
+      const unsubscribe = onSnapshot(
+        q,
+        (snapshot) => {
+          const list: TCCEvent[] = [];
+          snapshot.forEach((docSnap) => {
+            list.push({
+              id: docSnap.id,
+              ...(docSnap.data() as Omit<TCCEvent, 'id'>)
+            });
+          });
+          setEventsList(list);
+          setLoadingEvents(false);
+        },
+        (error) => {
+          console.error('Error fetching events from Firestore:', error);
+          setLoadingEvents(false);
+        }
+      );
+
+      return () => unsubscribe();
+    } catch (err: any) {
+      console.error(err);
+      setLoadingEvents(false);
+    }
+  }, [isLoggedIn]);
+
+  // Event Handlers
+  const openNewEventModal = () => {
+    setEditingEvent(null);
+    setEventTitle('');
+    const todayStr = new Date().toISOString().split('T')[0];
+    setEventDate(todayStr);
+    setEventTime('10:00 AM - 12:00 PM');
+    setEventLocation('TCC Main Sanctuary');
+    setEventCategory('Sunday Service');
+    setEventDescription('');
+    setEventColor('#d32f2f');
+    setEventRecurrence('weekly');
+    setEventRecurrenceEndType('never');
+    setEventRecurrenceEndDate('');
+    setEventRecurrenceCount('');
+    setEventSuccess('');
+    setIsEventModalOpen(true);
+  };
+
+  const openEditEventModal = (ev: TCCEvent) => {
+    setEditingEvent(ev);
+    setEventTitle(ev.title || '');
+    setEventDate(ev.date || new Date().toISOString().split('T')[0]);
+    setEventTime(ev.time || '');
+    setEventLocation(ev.location || '');
+    setEventCategory(ev.category || 'Sunday Service');
+    setEventDescription(ev.description || '');
+    setEventColor(ev.color || '#d32f2f');
+    setEventRecurrence(ev.recurrence || 'none');
+    setEventRecurrenceEndType(ev.recurrenceEndType || (ev.recurrenceEndDate ? 'until_date' : 'never'));
+    setEventRecurrenceEndDate(ev.recurrenceEndDate || '');
+    setEventRecurrenceCount(ev.recurrenceCount || '');
+    setEventSuccess('');
+    setIsEventModalOpen(true);
+  };
+
+  const setQuickDate = (type: 'today' | 'next-sunday' | 'next-wednesday' | 'next-friday') => {
+    const d = new Date();
+    if (type === 'next-sunday') {
+      const day = d.getDay();
+      const diff = (7 - day) % 7 || 7;
+      d.setDate(d.getDate() + diff);
+    } else if (type === 'next-wednesday') {
+      const day = d.getDay();
+      const diff = (3 - day + 7) % 7 || 7;
+      d.setDate(d.getDate() + diff);
+    } else if (type === 'next-friday') {
+      const day = d.getDay();
+      const diff = (5 - day + 7) % 7 || 7;
+      d.setDate(d.getDate() + diff);
+    }
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    setEventDate(`${yyyy}-${mm}-${dd}`);
+  };
+
+  const setQuickRecurrenceDuration = (type: '4-weeks' | '8-weeks' | '12-weeks' | 'end-of-year' | '6-months' | '1-year' | 'never') => {
+    if (type === 'never') {
+      setEventRecurrenceEndType('never');
+      setEventRecurrenceEndDate('');
+      setEventRecurrenceCount('');
+      return;
+    }
+
+    if (!eventDate) return;
+    const parts = eventDate.split('-').map(Number);
+    if (parts.length !== 3) return;
+
+    const start = new Date(parts[0], parts[1] - 1, parts[2]);
+
+    if (type === '4-weeks') {
+      start.setDate(start.getDate() + 28);
+      setEventRecurrenceEndType('until_date');
+      setEventRecurrenceCount(4);
+    } else if (type === '8-weeks') {
+      start.setDate(start.getDate() + 56);
+      setEventRecurrenceEndType('until_date');
+      setEventRecurrenceCount(8);
+    } else if (type === '12-weeks') {
+      start.setDate(start.getDate() + 84);
+      setEventRecurrenceEndType('until_date');
+      setEventRecurrenceCount(12);
+    } else if (type === 'end-of-year') {
+      start.setMonth(11, 31); // Dec 31
+      setEventRecurrenceEndType('until_date');
+      setEventRecurrenceCount('');
+    } else if (type === '6-months') {
+      start.setMonth(start.getMonth() + 6);
+      setEventRecurrenceEndType('until_date');
+      setEventRecurrenceCount('');
+    } else if (type === '1-year') {
+      start.setFullYear(start.getFullYear() + 1);
+      setEventRecurrenceEndType('until_date');
+      setEventRecurrenceCount('');
+    }
+
+    const yyyy = start.getFullYear();
+    const mm = String(start.getMonth() + 1).padStart(2, '0');
+    const dd = String(start.getDate()).padStart(2, '0');
+    setEventRecurrenceEndDate(`${yyyy}-${mm}-${dd}`);
+  };
+
+  const handleRecurrenceCountChange = (val: number | '') => {
+    setEventRecurrenceCount(val);
+    if (val && typeof val === 'number' && val > 0 && eventDate) {
+      const parts = eventDate.split('-').map(Number);
+      if (parts.length === 3) {
+        const start = new Date(parts[0], parts[1] - 1, parts[2]);
+        if (eventRecurrence === 'weekly') {
+          start.setDate(start.getDate() + (val - 1) * 7);
+        } else if (eventRecurrence === 'monthly') {
+          start.setMonth(start.getMonth() + (val - 1));
+        } else if (eventRecurrence === 'yearly') {
+          start.setFullYear(start.getFullYear() + (val - 1));
+        }
+        const yyyy = start.getFullYear();
+        const mm = String(start.getMonth() + 1).padStart(2, '0');
+        const dd = String(start.getDate()).padStart(2, '0');
+        setEventRecurrenceEndDate(`${yyyy}-${mm}-${dd}`);
+        setEventRecurrenceEndType('until_date');
+      }
+    }
+  };
+
+  const handleSaveEvent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!eventTitle.trim() || !eventDate) return;
+
+    setSavingEvent(true);
+    setEventSuccess('');
+
+    try {
+      const payload = {
+        title: eventTitle.trim(),
+        date: eventDate,
+        time: eventTime.trim(),
+        location: eventLocation.trim() || 'Transformation City Church',
+        category: eventCategory,
+        description: eventDescription.trim(),
+        color: eventColor,
+        recurrence: eventRecurrence,
+        recurrenceEndType: eventRecurrence === 'none' ? 'never' : eventRecurrenceEndType,
+        recurrenceEndDate: (eventRecurrence !== 'none' && eventRecurrenceEndType !== 'never') ? eventRecurrenceEndDate : '',
+        recurrenceCount: (eventRecurrence !== 'none' && eventRecurrenceEndType !== 'never' && typeof eventRecurrenceCount === 'number') ? eventRecurrenceCount : null,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (editingEvent && editingEvent.id) {
+        await updateDoc(doc(db, 'events', editingEvent.id), payload);
+        setEventSuccess('Event updated successfully!');
+      } else {
+        await addDoc(collection(db, 'events'), {
+          ...payload,
+          createdAt: new Date().toISOString(),
+          cancelledDates: []
+        });
+        setEventSuccess('New TCC event added successfully!');
+      }
+
+      setTimeout(() => {
+        setIsEventModalOpen(false);
+        setEventSuccess('');
+      }, 1000);
+    } catch (err) {
+      console.error('Error saving event:', err);
+      alert('Failed to save event. Please check input or database permissions.');
+    } finally {
+      setSavingEvent(false);
+    }
+  };
+
+  const handleToggleCancelDate = async (ev: TCCEvent, dateStr: string) => {
+    if (!ev.id) return;
+    setUpdatingCancellation(true);
+    try {
+      const currentList = ev.cancelledDates || [];
+      const isAlreadyCancelled = currentList.includes(dateStr);
+      const newList = isAlreadyCancelled
+        ? currentList.filter((d) => d !== dateStr)
+        : [...currentList, dateStr];
+
+      await updateDoc(doc(db, 'events', ev.id), {
+        cancelledDates: newList,
+        updatedAt: new Date().toISOString()
+      });
+
+      const updatedEv = { ...ev, cancelledDates: newList };
+      setSelectedCancelEvent(updatedEv);
+      setEventsList((prev) => prev.map((item) => (item.id === ev.id ? updatedEv : item)));
+    } catch (err) {
+      console.error('Error toggling cancellation:', err);
+      alert('Failed to update event cancellation status.');
+    } finally {
+      setUpdatingCancellation(false);
+    }
+  };
+
+  const getUpcomingOccurrenceDates = (ev: TCCEvent, count = 12): string[] => {
+    if (!ev.date) return [];
+    const parts = ev.date.split('-').map(Number);
+    if (parts.length !== 3) return [ev.date];
+
+    const start = new Date(parts[0], parts[1] - 1, parts[2]);
+    const dates: string[] = [];
+
+    if (!ev.recurrence || ev.recurrence === 'none') {
+      return [ev.date];
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    let cur = new Date(start);
+
+    // Roll forward to near current date if start date is in the past
+    if (cur < today) {
+      while (cur < today) {
+        if (ev.recurrence === 'weekly') {
+          cur.setDate(cur.getDate() + 7);
+        } else if (ev.recurrence === 'monthly') {
+          cur.setMonth(cur.getMonth() + 1);
+        } else if (ev.recurrence === 'yearly') {
+          cur.setFullYear(cur.getFullYear() + 1);
+        } else {
+          break;
+        }
+      }
+    }
+
+    for (let i = 0; i < count; i++) {
+      const y = cur.getFullYear();
+      const m = String(cur.getMonth() + 1).padStart(2, '0');
+      const d = String(cur.getDate()).padStart(2, '0');
+      const dateStr = `${y}-${m}-${d}`;
+
+      if (ev.recurrenceEndDate && dateStr > ev.recurrenceEndDate) {
+        break;
+      }
+
+      dates.push(dateStr);
+
+      if (ev.recurrence === 'weekly') {
+        cur.setDate(cur.getDate() + 7);
+      } else if (ev.recurrence === 'monthly') {
+        cur.setMonth(cur.getMonth() + 1);
+      } else if (ev.recurrence === 'yearly') {
+        cur.setFullYear(cur.getFullYear() + 1);
+      } else {
+        break;
+      }
+    }
+
+    return dates;
+  };
+
+  interface UpcomingOccurrenceItem {
+    event: TCCEvent;
+    dateStr: string;
+    formattedDate: string;
+    dayOfWeekStr: string;
+    isCancelled: boolean;
+  }
+
+  const upcomingOccurrencesList = useMemo(() => {
+    const list: UpcomingOccurrenceItem[] = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const horizonDate = new Date(today);
+    horizonDate.setDate(horizonDate.getDate() + occurrenceDaysHorizon);
+
+    for (const ev of eventsList) {
+      if (!ev.date) continue;
+      const parts = ev.date.split('-').map(Number);
+      if (parts.length !== 3) continue;
+
+      const startDate = new Date(parts[0], parts[1] - 1, parts[2]);
+
+      if (!ev.recurrence || ev.recurrence === 'none') {
+        if (startDate >= today && startDate <= horizonDate) {
+          const isCancelled = ev.cancelledDates?.includes(ev.date) || false;
+          list.push({
+            event: ev,
+            dateStr: ev.date,
+            formattedDate: startDate.toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric'
+            }),
+            dayOfWeekStr: startDate.toLocaleDateString('en-US', { weekday: 'short' }),
+            isCancelled
+          });
+        }
+        continue;
+      }
+
+      let cur = new Date(startDate);
+      // Roll forward to near current date if start date is in the past
+      if (cur < today) {
+        while (cur < today) {
+          if (ev.recurrence === 'weekly') {
+            cur.setDate(cur.getDate() + 7);
+          } else if (ev.recurrence === 'monthly') {
+            cur.setMonth(cur.getMonth() + 1);
+          } else if (ev.recurrence === 'yearly') {
+            cur.setFullYear(cur.getFullYear() + 1);
+          } else {
+            break;
+          }
+        }
+      }
+
+      while (cur <= horizonDate) {
+        const y = cur.getFullYear();
+        const m = String(cur.getMonth() + 1).padStart(2, '0');
+        const d = String(cur.getDate()).padStart(2, '0');
+        const dateStr = `${y}-${m}-${d}`;
+
+        if (ev.recurrenceEndDate && dateStr > ev.recurrenceEndDate) {
+          break;
+        }
+
+        const isCancelled = ev.cancelledDates?.includes(dateStr) || false;
+
+        list.push({
+          event: ev,
+          dateStr,
+          formattedDate: cur.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+          }),
+          dayOfWeekStr: cur.toLocaleDateString('en-US', { weekday: 'short' }),
+          isCancelled
+        });
+
+        if (ev.recurrence === 'weekly') {
+          cur.setDate(cur.getDate() + 7);
+        } else if (ev.recurrence === 'monthly') {
+          cur.setMonth(cur.getMonth() + 1);
+        } else if (ev.recurrence === 'yearly') {
+          cur.setFullYear(cur.getFullYear() + 1);
+        } else {
+          break;
+        }
+      }
+    }
+
+    list.sort((a, b) => a.dateStr.localeCompare(b.dateStr));
+    return list;
+  }, [eventsList, occurrenceDaysHorizon]);
+
+  const filteredOccurrences = useMemo(() => {
+    return upcomingOccurrencesList.filter((item) => {
+      if (occurrenceSearch) {
+        const q = occurrenceSearch.toLowerCase();
+        const matchTitle = item.event.title.toLowerCase().includes(q);
+        const matchDate = item.dateStr.includes(q) || item.formattedDate.toLowerCase().includes(q) || item.dayOfWeekStr.toLowerCase().includes(q);
+        const matchCategory = (item.event.category || '').toLowerCase().includes(q);
+        if (!matchTitle && !matchDate && !matchCategory) return false;
+      }
+
+      if (occurrenceCategory !== 'All' && item.event.category !== occurrenceCategory) {
+        return false;
+      }
+
+      if (occurrenceStatus === 'active' && item.isCancelled) return false;
+      if (occurrenceStatus === 'cancelled' && !item.isCancelled) return false;
+
+      return true;
+    });
+  }, [upcomingOccurrencesList, occurrenceSearch, occurrenceCategory, occurrenceStatus]);
+
+  const handleDeleteEvent = async (eventId: string, title: string) => {
+    if (!window.confirm(`Are you sure you want to remove the event "${title}"?`)) return;
+
+    try {
+      await deleteDoc(doc(db, 'events', eventId));
+    } catch (err) {
+      console.error('Error deleting event:', err);
+      alert('Failed to remove event.');
+    }
+  };
+
+  const handleSeedDefaultEvents = async () => {
+    if (!window.confirm('Seed initial sample TCC events into the database?')) return;
+    try {
+      for (const item of DEFAULT_INITIAL_EVENTS) {
+        await addDoc(collection(db, 'events'), item);
+      }
+      alert('Sample events added successfully!');
+    } catch (err) {
+      console.error('Error seeding events:', err);
+      alert('Failed to seed default events.');
+    }
+  };
 
   // Handle Granting Admin Access
   const handleAddAdmin = async (e: React.FormEvent) => {
@@ -576,7 +1050,19 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
       <main className="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
         
         {/* Navigation Tabs */}
-        <div className="flex border-b border-white/10 space-x-2">
+        <div className="flex border-b border-white/10 space-x-2 overflow-x-auto">
+          <button
+            onClick={() => setActiveTab('events')}
+            className={`px-6 py-3.5 font-black text-xs sm:text-sm uppercase tracking-wider rounded-t-2xl transition-all flex items-center space-x-2.5 ${
+              activeTab === 'events'
+                ? 'bg-gray-900 text-white border-t-2 border-[#a52424] shadow-lg'
+                : 'text-gray-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <CalendarDays className="w-4 h-4 text-red-400" />
+            <span>Manage Events ({eventsList.length})</span>
+          </button>
+
           <button
             onClick={() => setActiveTab('submissions')}
             className={`px-6 py-3.5 font-black text-xs sm:text-sm uppercase tracking-wider rounded-t-2xl transition-all flex items-center space-x-2.5 ${
@@ -602,7 +1088,421 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
           </button>
         </div>
 
-        {activeTab === 'admins' ? (
+        {activeTab === 'events' ? (
+          /* EVENTS MANAGEMENT TAB */
+          <div className="space-y-8">
+            <div className="bg-gray-900 border border-white/10 rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl">
+              {/* Header & View Switcher */}
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-white/10 pb-6">
+                <div>
+                  <div className="flex items-center space-x-2 text-red-400 font-bold text-xs uppercase tracking-widest mb-1">
+                    <Calendar className="w-4 h-4" />
+                    <span>Church Calendar Management</span>
+                  </div>
+                  <h2 className="text-2xl font-black text-white uppercase tracking-tight">TCC Events & Specific Cancellations</h2>
+                  <p className="text-xs text-gray-400 font-medium mt-1">
+                    View upcoming scheduled occurrence dates or configure base event templates.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                  {/* View Switcher Pills */}
+                  <div className="bg-gray-950 p-1 rounded-2xl border border-white/10 flex items-center space-x-1">
+                    <button
+                      onClick={() => setEventsViewMode('occurrences')}
+                      className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center space-x-2 ${
+                        eventsViewMode === 'occurrences'
+                          ? 'bg-[#a52424] text-white shadow-md'
+                          : 'text-gray-400 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      <CalendarDays className="w-4 h-4" />
+                      <span>Upcoming Timeline ({upcomingOccurrencesList.length})</span>
+                    </button>
+
+                    <button
+                      onClick={() => setEventsViewMode('master')}
+                      className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center space-x-2 ${
+                        eventsViewMode === 'master'
+                          ? 'bg-[#a52424] text-white shadow-md'
+                          : 'text-gray-400 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      <Tag className="w-4 h-4" />
+                      <span>Event Setup ({eventsList.length})</span>
+                    </button>
+                  </div>
+
+                  {eventsList.length === 0 && (
+                    <button
+                      onClick={handleSeedDefaultEvents}
+                      className="bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 px-4 py-2.5 rounded-2xl text-xs font-bold uppercase tracking-wider transition-all"
+                    >
+                      Load Sample Events
+                    </button>
+                  )}
+
+                  <button
+                    onClick={openNewEventModal}
+                    className="bg-white/10 hover:bg-white/20 text-white font-black px-5 py-2.5 rounded-2xl text-xs uppercase tracking-wider transition-all flex items-center space-x-2 border border-white/15"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add Event</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* OCCURRENCES TIMELINE VIEW */}
+              {eventsViewMode === 'occurrences' ? (
+                <div className="space-y-6">
+                  {/* Info Banner */}
+                  <div className="bg-gradient-to-r from-amber-950/40 via-gray-950 to-gray-950 border border-amber-500/30 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center space-x-2 text-amber-400 font-bold text-xs uppercase tracking-wider">
+                        <Ban className="w-4 h-4" />
+                        <span>Single Occurrence Cancellation</span>
+                      </div>
+                      <p className="text-xs text-gray-300 leading-relaxed max-w-2xl">
+                        Below is the chronological schedule of all upcoming event dates. Click <strong className="text-red-400">"Cancel Occurrence"</strong> on any specific date to cancel <span className="underline decoration-red-500">only that single meeting instance</span> without affecting future or past weeks.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center space-x-2 text-xs font-bold text-amber-300 font-mono bg-amber-500/10 px-3 py-1.5 rounded-xl border border-amber-500/20 whitespace-nowrap">
+                      <span>{upcomingOccurrencesList.filter(o => o.isCancelled).length} Currently Cancelled</span>
+                    </div>
+                  </div>
+
+                  {/* Filters & Search Toolbar */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    {/* Search */}
+                    <div className="relative">
+                      <Search className="w-4 h-4 text-gray-500 absolute left-3.5 top-3.5" />
+                      <input
+                        type="text"
+                        placeholder="Search date, title, category..."
+                        value={occurrenceSearch}
+                        onChange={(e) => setOccurrenceSearch(e.target.value)}
+                        className="w-full bg-gray-950 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#a52424]"
+                      />
+                    </div>
+
+                    {/* Category Filter */}
+                    <div>
+                      <select
+                        value={occurrenceCategory}
+                        onChange={(e) => setOccurrenceCategory(e.target.value)}
+                        className="w-full bg-gray-950 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-[#a52424]"
+                      >
+                        <option value="All">All Categories</option>
+                        <option value="Sunday Service">Sunday Service</option>
+                        <option value="Prayer & Worship">Prayer & Worship</option>
+                        <option value="Youth & Kids">Youth & Kids</option>
+                        <option value="Community Outreach">Community Outreach</option>
+                        <option value="Special Event">Special Event</option>
+                      </select>
+                    </div>
+
+                    {/* Status Filter */}
+                    <div className="flex items-center space-x-1 bg-gray-950 p-1 rounded-xl border border-white/10">
+                      <button
+                        onClick={() => setOccurrenceStatus('all')}
+                        className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all ${
+                          occurrenceStatus === 'all'
+                            ? 'bg-white/15 text-white'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        All
+                      </button>
+                      <button
+                        onClick={() => setOccurrenceStatus('active')}
+                        className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all ${
+                          occurrenceStatus === 'active'
+                            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        Active
+                      </button>
+                      <button
+                        onClick={() => setOccurrenceStatus('cancelled')}
+                        className={`flex-1 py-1.5 text-[11px] font-bold rounded-lg transition-all ${
+                          occurrenceStatus === 'cancelled'
+                            ? 'bg-red-500/20 text-red-300 border border-red-500/30'
+                            : 'text-gray-400 hover:text-white'
+                        }`}
+                      >
+                        Cancelled
+                      </button>
+                    </div>
+
+                    {/* Days Horizon */}
+                    <div>
+                      <select
+                        value={occurrenceDaysHorizon}
+                        onChange={(e) => setOccurrenceDaysHorizon(Number(e.target.value))}
+                        className="w-full bg-gray-950 border border-white/10 rounded-xl px-3 py-2.5 text-xs text-white font-mono focus:outline-none focus:ring-2 focus:ring-[#a52424]"
+                      >
+                        <option value={30}>Next 30 Days Schedule</option>
+                        <option value={60}>Next 60 Days Schedule</option>
+                        <option value={90}>Next 90 Days Schedule</option>
+                        <option value={180}>Next 180 Days Schedule</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Occurrences List */}
+                  {loadingEvents ? (
+                    <div className="text-center py-12 text-gray-400 space-y-3">
+                      <RefreshCw className="w-8 h-8 animate-spin mx-auto text-[#a52424]" />
+                      <p className="text-xs font-bold uppercase tracking-widest">Loading upcoming timeline...</p>
+                    </div>
+                  ) : filteredOccurrences.length === 0 ? (
+                    <div className="text-center py-16 text-gray-400 space-y-3 bg-gray-950/50 rounded-2xl border border-white/5">
+                      <CalendarDays className="w-10 h-10 mx-auto text-gray-600" />
+                      <p className="text-sm font-bold text-white">No occurrences match your search filter</p>
+                      <p className="text-xs text-gray-500">Try adjusting your category, status, or search terms above.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {filteredOccurrences.map((item, idx) => (
+                        <div
+                          key={`${item.event.id}-${item.dateStr}-${idx}`}
+                          className={`p-4 sm:p-5 rounded-2xl border transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                            item.isCancelled
+                              ? 'bg-red-950/20 border-red-500/30 text-red-200'
+                              : 'bg-gray-950 border-white/10 text-white hover:border-white/20'
+                          }`}
+                        >
+                          {/* Date Callout */}
+                          <div className="flex items-center space-x-4">
+                            <div className={`w-16 h-16 rounded-2xl border flex flex-col items-center justify-center flex-shrink-0 ${
+                              item.isCancelled
+                                ? 'bg-red-500/10 border-red-500/30 text-red-400'
+                                : 'bg-white/5 border-white/10 text-white'
+                            }`}>
+                              <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">
+                                {item.dayOfWeekStr}
+                              </span>
+                              <span className="text-lg font-black font-mono leading-tight">
+                                {item.dateStr.split('-')[2]}
+                              </span>
+                              <span className="text-[9px] font-bold uppercase text-gray-400">
+                                {new Date(item.dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short' })}
+                              </span>
+                            </div>
+
+                            {/* Details */}
+                            <div className="space-y-1.5">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span
+                                  className="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full text-white"
+                                  style={{ backgroundColor: item.event.color || '#d32f2f' }}
+                                >
+                                  {item.event.category || 'General'}
+                                </span>
+
+                                {item.event.recurrence && item.event.recurrence !== 'none' && (
+                                  <span className="bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full flex items-center space-x-1">
+                                    <Repeat className="w-3 h-3 text-amber-400" />
+                                    <span>{item.event.recurrence}</span>
+                                  </span>
+                                )}
+
+                                {item.isCancelled ? (
+                                  <span className="bg-red-500/20 text-red-300 border border-red-500/40 text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full flex items-center space-x-1">
+                                    <Ban className="w-3 h-3 text-red-400" />
+                                    <span>CANCELLED FOR THIS OCCURRENCE</span>
+                                  </span>
+                                ) : (
+                                  <span className="bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full flex items-center space-x-1">
+                                    <Check className="w-3 h-3 text-emerald-400" />
+                                    <span>ACTIVE ON CALENDAR</span>
+                                  </span>
+                                )}
+                              </div>
+
+                              <h3 className={`text-base font-black ${item.isCancelled ? 'line-through text-red-300' : 'text-white'}`}>
+                                {item.event.title}
+                              </h3>
+
+                              <div className="flex flex-wrap items-center gap-3 text-xs text-gray-400 font-medium">
+                                <span className="font-mono text-gray-300 font-bold">{item.formattedDate}</span>
+                                {item.event.time && (
+                                  <span className="flex items-center space-x-1">
+                                    <Clock className="w-3 h-3 text-gray-500" />
+                                    <span>{item.event.time}</span>
+                                  </span>
+                                )}
+                                {item.event.location && (
+                                  <span className="flex items-center space-x-1">
+                                    <MapPin className="w-3 h-3 text-gray-500" />
+                                    <span>{item.event.location}</span>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Occurrence Action */}
+                          <div className="flex items-center justify-end">
+                            <button
+                              onClick={() => handleToggleCancelDate(item.event, item.dateStr)}
+                              disabled={updatingCancellation}
+                              className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center space-x-2 border shadow-md ${
+                                item.isCancelled
+                                  ? 'bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-400 shadow-emerald-900/30'
+                                  : 'bg-red-500/10 hover:bg-red-600 text-red-300 hover:text-white border-red-500/30'
+                              }`}
+                            >
+                              {item.isCancelled ? (
+                                <>
+                                  <Check className="w-4 h-4 text-white" />
+                                  <span>Restore Occurrence</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Ban className="w-4 h-4 text-red-400" />
+                                  <span>Cancel Occurrence</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* MASTER EVENT SETUP VIEW */
+                loadingEvents ? (
+                  <div className="text-center py-12 text-gray-400 space-y-3">
+                    <RefreshCw className="w-8 h-8 animate-spin mx-auto text-[#a52424]" />
+                    <p className="text-xs font-bold uppercase tracking-widest">Loading church events...</p>
+                  </div>
+                ) : eventsList.length === 0 ? (
+                  <div className="text-center py-16 text-gray-400 space-y-4">
+                    <CalendarDays className="w-12 h-12 mx-auto text-gray-600" />
+                    <h3 className="text-xl font-bold text-white uppercase tracking-tight">No Events Found</h3>
+                    <p className="text-sm text-gray-500 max-w-sm mx-auto">
+                      Click "Add New Event" to schedule your first event or load sample events.
+                    </p>
+                    <button
+                      onClick={handleSeedDefaultEvents}
+                      className="bg-white/10 hover:bg-white/20 text-white font-bold px-6 py-2.5 rounded-xl text-xs uppercase"
+                    >
+                      Load Sample Events
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {eventsList.map((ev) => (
+                      <div
+                        key={ev.id}
+                        className="bg-gray-950 border border-white/10 rounded-2xl p-5 space-y-4 hover:border-white/20 transition-all flex flex-col justify-between group"
+                      >
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span
+                                className="text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full text-white"
+                                style={{ backgroundColor: ev.color || '#d32f2f' }}
+                              >
+                                {ev.category || 'General'}
+                              </span>
+
+                              {ev.recurrence && ev.recurrence !== 'none' ? (
+                                <span className="bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full flex items-center space-x-1">
+                                  <Repeat className="w-3 h-3 text-amber-400" />
+                                  <span>
+                                    {ev.recurrence}
+                                    {ev.recurrenceEndDate ? ` (until ${ev.recurrenceEndDate})` : ' (indefinite)'}
+                                  </span>
+                                </span>
+                              ) : (
+                                <span className="bg-gray-800 border border-white/10 text-gray-300 text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full">
+                                  Single Event
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <h3 className="text-lg font-black text-white group-hover:text-red-400 transition-colors pt-1">
+                            {ev.title}
+                          </h3>
+
+                          <div className="space-y-1 text-xs text-gray-400 font-medium">
+                            <div className="flex items-center space-x-2 text-gray-300 font-mono font-bold">
+                              <Calendar className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+                              <span>Series Start: {new Date(ev.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                            </div>
+                            {ev.time && (
+                              <div className="flex items-center space-x-2">
+                                <Clock className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+                                <span>{ev.time}</span>
+                              </div>
+                            )}
+                            {ev.location && (
+                              <div className="flex items-center space-x-2">
+                                <MapPin className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+                                <span>{ev.location}</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {ev.cancelledDates && ev.cancelledDates.length > 0 && (
+                            <div className="bg-red-500/10 border border-red-500/20 text-red-300 px-3 py-1.5 rounded-xl text-[11px] font-bold flex items-center space-x-1.5">
+                              <Ban className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+                              <span>{ev.cancelledDates.length} specific date(s) marked cancelled</span>
+                            </div>
+                          )}
+
+                          {ev.description && (
+                            <p className="text-xs text-gray-400 line-clamp-2 pt-1 border-t border-white/5 font-normal">
+                              {ev.description}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="pt-3 border-t border-white/10 flex items-center justify-between space-x-2">
+                          <button
+                            onClick={() => {
+                              setSelectedCancelEvent(ev);
+                              setIsCancelModalOpen(true);
+                            }}
+                            className="bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center space-x-1.5"
+                            title="Cancel or un-cancel specific upcoming weeks"
+                          >
+                            <Ban className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Cancel for a Week</span>
+                          </button>
+
+                          <div className="flex items-center space-x-2">
+                            <button
+                              onClick={() => openEditEventModal(ev)}
+                              className="bg-white/5 hover:bg-white/10 text-gray-300 px-3 py-1.5 rounded-xl text-xs font-bold border border-white/10 transition-all flex items-center space-x-1"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                              <span>Edit</span>
+                            </button>
+
+                            <button
+                              onClick={() => ev.id && handleDeleteEvent(ev.id, ev.title)}
+                              className="bg-red-500/10 hover:bg-red-500/20 text-red-400 px-3 py-1.5 rounded-xl text-xs font-bold border border-red-500/20 transition-all flex items-center space-x-1"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>Remove</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              )}
+            </div>
+          </div>
+        ) : activeTab === 'admins' ? (
           /* ADMIN TEAM MANAGEMENT TAB */
           <div className="space-y-8">
             {/* Guide Card */}
@@ -1098,6 +1998,504 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
                 className="bg-white/5 hover:bg-white/10 text-white px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider border border-white/10"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADD / EDIT EVENT MODAL */}
+      {isEventModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-white/10 rounded-3xl max-w-xl w-full p-6 sm:p-8 space-y-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() => setIsEventModalOpen(false)}
+              className="absolute top-6 right-6 p-2 text-gray-400 hover:text-white rounded-full bg-white/5 hover:bg-white/10 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div>
+              <span className="text-xs font-black uppercase tracking-widest text-red-400">
+                {editingEvent ? 'Edit Event' : 'Create New Event'}
+              </span>
+              <h3 className="text-2xl font-black text-white uppercase tracking-tight mt-1">
+                {editingEvent ? 'Update TCC Event' : 'Schedule TCC Event'}
+              </h3>
+            </div>
+
+            {eventSuccess && (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 px-4 py-3 rounded-2xl text-xs font-bold flex items-center space-x-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                <span>{eventSuccess}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEvent} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+                  Event Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Sunday Worship Service"
+                  value={eventTitle}
+                  onChange={(e) => setEventTitle(e.target.value)}
+                  className="w-full bg-gray-950 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#a52424]"
+                />
+              </div>
+
+              {/* Enhanced Date Picker Section */}
+              <div className="bg-gray-950/80 p-4 rounded-2xl border border-white/10 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold uppercase tracking-wider text-gray-300 flex items-center space-x-1.5">
+                    <Calendar className="w-4 h-4 text-[#a52424]" />
+                    <span>Event Start Date *</span>
+                  </label>
+                  
+                  {eventDate && (
+                    <span className="text-xs font-bold text-red-400 font-mono bg-red-500/10 px-2.5 py-0.5 rounded-md border border-red-500/20">
+                      {new Date(eventDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="relative">
+                    <input
+                      type="date"
+                      required
+                      value={eventDate}
+                      onChange={(e) => setEventDate(e.target.value)}
+                      style={{ colorScheme: 'dark' }}
+                      className="w-full bg-gray-900 border border-white/15 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#a52424] cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="text"
+                      placeholder="e.g. 10:00 AM - 12:00 PM"
+                      value={eventTime}
+                      onChange={(e) => setEventTime(e.target.value)}
+                      className="w-full bg-gray-900 border border-white/15 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#a52424]"
+                    />
+                  </div>
+                </div>
+
+                {/* Quick Selection Shortcuts */}
+                <div className="pt-2 border-t border-white/5 flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Quick Select:</span>
+                  <button
+                    type="button"
+                    onClick={() => setQuickDate('today')}
+                    className="text-[11px] font-bold bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 px-2.5 py-1 rounded-lg transition-all"
+                  >
+                    Today
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickDate('next-sunday')}
+                    className="text-[11px] font-bold bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/30 px-2.5 py-1 rounded-lg transition-all"
+                  >
+                    Next Sunday
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickDate('next-wednesday')}
+                    className="text-[11px] font-bold bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 px-2.5 py-1 rounded-lg transition-all"
+                  >
+                    Next Wednesday
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickDate('next-friday')}
+                    className="text-[11px] font-bold bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 px-2.5 py-1 rounded-lg transition-all"
+                  >
+                    Next Friday
+                  </button>
+                </div>
+              </div>
+
+              {/* Recurrence & Category Section */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5 flex items-center space-x-1.5">
+                    <Repeat className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Recurrence Schedule</span>
+                  </label>
+                  <select
+                    value={eventRecurrence}
+                    onChange={(e) => setEventRecurrence(e.target.value as any)}
+                    className="w-full bg-gray-950 border border-amber-500/30 rounded-2xl px-4 py-3 text-sm text-amber-200 font-bold focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  >
+                    <option value="weekly" className="bg-gray-900 text-amber-300 font-bold">
+                      Weekly (Repeats every week, e.g. Sunday)
+                    </option>
+                    <option value="none" className="bg-gray-900 text-gray-300 font-bold">
+                      One-Time Event (Does not repeat)
+                    </option>
+                    <option value="monthly" className="bg-gray-900 text-blue-300 font-bold">
+                      Monthly (Repeats on this date every month)
+                    </option>
+                    <option value="yearly" className="bg-gray-900 text-emerald-300 font-bold">
+                      Yearly (Repeats annually on this date)
+                    </option>
+                  </select>
+                  <p className="text-[10px] text-amber-400/80 mt-1">
+                    {eventRecurrence === 'weekly' && '✓ Automatically repeats every week across Monthly and Annual views.'}
+                    {eventRecurrence === 'monthly' && '✓ Automatically repeats monthly on the same date.'}
+                    {eventRecurrence === 'yearly' && '✓ Automatically repeats every year on this date.'}
+                    {eventRecurrence === 'none' && '• Single scheduled event instance.'}
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+                    Category
+                  </label>
+                  <select
+                    value={eventCategory}
+                    onChange={(e) => setEventCategory(e.target.value)}
+                    className="w-full bg-gray-950 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-[#a52424]"
+                  >
+                    <option value="Sunday Service">Sunday Service</option>
+                    <option value="Prayer & Worship">Prayer & Worship</option>
+                    <option value="Youth & Kids">Youth & Kids</option>
+                    <option value="Community Outreach">Community Outreach</option>
+                    <option value="Fellowship & Cafe">Fellowship & Cafe</option>
+                    <option value="Special Event">Special Event</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Recurrence End Condition & Duration Section */}
+              {eventRecurrence !== 'none' && (
+                <div className="bg-amber-950/20 border border-amber-500/30 p-4 rounded-2xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold uppercase tracking-wider text-amber-300 flex items-center space-x-1.5">
+                      <Clock className="w-4 h-4 text-amber-400" />
+                      <span>Recurrence Duration & End Limit</span>
+                    </label>
+                    
+                    {eventRecurrenceEndType === 'never' ? (
+                      <span className="text-[10px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full uppercase">
+                        Indefinite (No End Date)
+                      </span>
+                    ) : eventRecurrenceEndDate ? (
+                      <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full uppercase">
+                        Stops on {new Date(eventRecurrenceEndDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {/* Quick Duration Preset Selector */}
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+                      Quick Select Duration:
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setQuickRecurrenceDuration('4-weeks')}
+                        className="text-xs font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-1 rounded-xl transition-all"
+                      >
+                        4 Weeks
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQuickRecurrenceDuration('8-weeks')}
+                        className="text-xs font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-1 rounded-xl transition-all"
+                      >
+                        8 Weeks
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQuickRecurrenceDuration('12-weeks')}
+                        className="text-xs font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-1 rounded-xl transition-all"
+                      >
+                        12 Weeks
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQuickRecurrenceDuration('end-of-year')}
+                        className="text-xs font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-1 rounded-xl transition-all"
+                      >
+                        This Year (Dec 31)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQuickRecurrenceDuration('6-months')}
+                        className="text-xs font-bold bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2.5 py-1 rounded-xl transition-all"
+                      >
+                        6 Months
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQuickRecurrenceDuration('never')}
+                        className="text-xs font-bold bg-white/5 hover:bg-white/10 text-gray-300 border border-white/10 px-2.5 py-1 rounded-xl transition-all"
+                      >
+                        No End Date
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Custom Stop Mode */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-amber-500/20">
+                    <div>
+                      <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1">
+                        Stop Option
+                      </label>
+                      <select
+                        value={eventRecurrenceEndType}
+                        onChange={(e) => {
+                          const val = e.target.value as 'never' | 'until_date' | 'count';
+                          setEventRecurrenceEndType(val);
+                          if (val === 'never') {
+                            setEventRecurrenceEndDate('');
+                            setEventRecurrenceCount('');
+                          }
+                        }}
+                        className="w-full bg-gray-900 border border-amber-500/30 rounded-xl px-3 py-2 text-xs text-amber-200 font-bold focus:outline-none focus:ring-1 focus:ring-amber-500"
+                      >
+                        <option value="never" className="bg-gray-900 text-gray-300">Run Indefinitely (No End Date)</option>
+                        <option value="until_date" className="bg-gray-900 text-amber-300">Stop On Specific Date</option>
+                        <option value="count" className="bg-gray-900 text-blue-300">Stop After N Occurrences</option>
+                      </select>
+                    </div>
+
+                    {eventRecurrenceEndType === 'until_date' && (
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1">
+                          End Until Date
+                        </label>
+                        <input
+                          type="date"
+                          required={eventRecurrenceEndType === 'until_date'}
+                          value={eventRecurrenceEndDate}
+                          onChange={(e) => setEventRecurrenceEndDate(e.target.value)}
+                          style={{ colorScheme: 'dark' }}
+                          className="w-full bg-gray-900 border border-amber-500/30 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
+                        />
+                      </div>
+                    )}
+
+                    {eventRecurrenceEndType === 'count' && (
+                      <div>
+                        <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-1">
+                          Number of Occurrences
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          max="200"
+                          required={eventRecurrenceEndType === 'count'}
+                          placeholder="e.g. 10"
+                          value={eventRecurrenceCount}
+                          onChange={(e) => handleRecurrenceCountChange(e.target.value ? parseInt(e.target.value, 10) : '')}
+                          className="w-full bg-gray-900 border border-amber-500/30 rounded-xl px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {eventRecurrenceEndDate && (
+                    <p className="text-[11px] font-medium text-amber-300/90 pt-1">
+                      💡 Event will repeat starting {eventDate} and stop on {eventRecurrenceEndDate}.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+                  Location
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. TCC Main Sanctuary"
+                  value={eventLocation}
+                  onChange={(e) => setEventLocation(e.target.value)}
+                  className="w-full bg-gray-950 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#a52424]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+                  Badge Color
+                </label>
+                <div className="flex items-center space-x-3">
+                  {[
+                    { label: 'Red', color: '#d32f2f' },
+                    { label: 'Blue', color: '#2563eb' },
+                    { label: 'Green', color: '#059669' },
+                    { label: 'Amber', color: '#d97706' },
+                    { label: 'Purple', color: '#7c3aed' },
+                    { label: 'Rose', color: '#dc2626' }
+                  ].map((c) => (
+                    <button
+                      key={c.color}
+                      type="button"
+                      onClick={() => setEventColor(c.color)}
+                      className={`w-8 h-8 rounded-full flex items-center justify-center transition-transform ${
+                        eventColor === c.color ? 'scale-125 ring-2 ring-white' : 'hover:scale-110'
+                      }`}
+                      style={{ backgroundColor: c.color }}
+                      title={c.label}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">
+                  Description
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Provide additional details about the event..."
+                  value={eventDescription}
+                  onChange={(e) => setEventDescription(e.target.value)}
+                  className="w-full bg-gray-950 border border-white/10 rounded-2xl p-4 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#a52424]"
+                ></textarea>
+              </div>
+
+              <div className="pt-4 border-t border-white/10 flex items-center justify-end space-x-3">
+                <button
+                  type="button"
+                  onClick={() => setIsEventModalOpen(false)}
+                  className="bg-white/5 hover:bg-white/10 text-gray-300 font-bold px-5 py-3 rounded-2xl text-xs uppercase"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={savingEvent}
+                  className="bg-[#a52424] hover:bg-red-700 text-white font-black px-6 py-3 rounded-2xl text-xs uppercase tracking-widest transition-all shadow-lg shadow-red-900/40 disabled:opacity-50"
+                >
+                  {savingEvent ? 'Saving...' : editingEvent ? 'Save Changes' : 'Publish Event'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MANAGE WEEKLY CANCELLATIONS MODAL */}
+      {isCancelModalOpen && selectedCancelEvent && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-white/10 rounded-3xl max-w-xl w-full p-6 sm:p-8 space-y-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() => {
+                setIsCancelModalOpen(false);
+                setSelectedCancelEvent(null);
+              }}
+              className="absolute top-6 right-6 p-2 text-gray-400 hover:text-white rounded-full bg-white/5 hover:bg-white/10 transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="text-xs font-black uppercase tracking-widest text-amber-400 flex items-center space-x-1">
+                  <Ban className="w-3.5 h-3.5" />
+                  <span>Cancellation Manager</span>
+                </span>
+                {selectedCancelEvent.recurrence && selectedCancelEvent.recurrence !== 'none' && (
+                  <span className="bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full">
+                    {selectedCancelEvent.recurrence} Recurring
+                  </span>
+                )}
+              </div>
+
+              <h3 className="text-2xl font-black text-white uppercase tracking-tight mt-1">
+                {selectedCancelEvent.title}
+              </h3>
+              <p className="text-xs text-gray-400 mt-1">
+                Toggle specific upcoming weekly occurrence dates to mark them as cancelled or active on the church calendar.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <div className="text-xs font-bold uppercase tracking-wider text-gray-400 flex items-center justify-between">
+                <span>Upcoming Occurrences</span>
+                <span className="text-[10px] text-gray-500">12 Next Dates</span>
+              </div>
+
+              <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                {getUpcomingOccurrenceDates(selectedCancelEvent, 12).map((dateStr) => {
+                  const isCancelled = (selectedCancelEvent.cancelledDates || []).includes(dateStr);
+                  const formattedDate = new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric'
+                  });
+
+                  return (
+                    <div
+                      key={dateStr}
+                      className={`p-4 rounded-2xl border transition-all flex items-center justify-between ${
+                        isCancelled
+                          ? 'bg-red-500/10 border-red-500/30 text-red-200'
+                          : 'bg-gray-950 border-white/10 text-white hover:border-white/20'
+                      }`}
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center space-x-2">
+                          <Calendar className={`w-4 h-4 ${isCancelled ? 'text-red-400' : 'text-emerald-400'}`} />
+                          <span className={`text-sm font-bold font-mono ${isCancelled ? 'line-through text-red-300' : 'text-white'}`}>
+                            {formattedDate}
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-mono text-gray-500 block">
+                          Date code: {dateStr}
+                        </span>
+                      </div>
+
+                      <button
+                        onClick={() => handleToggleCancelDate(selectedCancelEvent, dateStr)}
+                        disabled={updatingCancellation}
+                        className={`px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center space-x-1.5 border shadow-sm ${
+                          isCancelled
+                            ? 'bg-red-500 hover:bg-red-600 text-white border-red-400 shadow-red-900/30'
+                            : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                        }`}
+                      >
+                        {isCancelled ? (
+                          <>
+                            <Ban className="w-3 h-3 text-white" />
+                            <span>Cancelled (Click to Restore)</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-3 h-3 text-emerald-400" />
+                            <span>Active (Click to Cancel)</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-white/10 flex items-center justify-between">
+              <span className="text-[11px] text-gray-400">
+                Changes take effect instantly on public calendar views.
+              </span>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCancelModalOpen(false);
+                  setSelectedCancelEvent(null);
+                }}
+                className="bg-white/10 hover:bg-white/20 text-white font-bold px-6 py-2.5 rounded-2xl text-xs uppercase"
+              >
+                Done
               </button>
             </div>
           </div>

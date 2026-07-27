@@ -1,5 +1,6 @@
 
 import React from 'react';
+import TCCLogo from './TCCLogo';
 
 interface FooterProps {
   onNavigate: (path: string) => void;
@@ -19,9 +20,9 @@ const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
           <div className="col-span-1 lg:col-span-1">
             <button 
               onClick={(e) => handleNav(e as any, '/')}
-              className="bg-[#d32f2f] w-16 h-16 rounded-xl flex items-center justify-center font-black text-white text-3xl mb-8 shadow-xl"
+              className="mb-8 block text-left focus:outline-none"
             >
-              TCC
+              <TCCLogo variant="dark" className="h-14" />
             </button>
             <p className="text-gray-400 mb-8 leading-relaxed text-lg">
               Ordinary people living extraordinary lives. Transforming our world by sharing the hope and power we have received.

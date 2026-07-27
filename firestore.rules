@@ -13,5 +13,11 @@ service cloud.firestore {
     match /admins/{adminId} {
       allow read, write: if true;
     }
+
+    // TCC Events collection - Public read, write access for management
+    match /events/{eventId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
   }
 }

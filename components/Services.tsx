@@ -20,7 +20,7 @@ const Services: React.FC = () => {
 
             <ul className="space-y-6 mt-12">
               {[
-                'Contemporary Worship',
+                'Worship',
                 'Practical Bible Teaching',
                 'Little Lights (Kids Ministry)'
               ].map((item, idx) => (

@@ -47,3 +47,22 @@ export interface AdminMember {
   role: string;
   createdAt: string;
 }
+
+export interface TCCEvent {
+  id?: string;
+  title: string;
+  date: string; // YYYY-MM-DD
+  time?: string;
+  location?: string;
+  category?: string;
+  description?: string;
+  color?: string;
+  recurrence?: 'none' | 'weekly' | 'monthly' | 'yearly';
+  recurrenceEndType?: 'never' | 'until_date' | 'count';
+  recurrenceEndDate?: string; // YYYY-MM-DD where recurrence stops
+  recurrenceCount?: number; // Number of occurrences if count based
+  cancelledDates?: string[]; // Array of YYYY-MM-DD strings where event is cancelled
+  isCancelled?: boolean; // For single event instance cancellation
+  createdAt?: string;
+  updatedAt?: string;
+}
