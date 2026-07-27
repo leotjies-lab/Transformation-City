@@ -74,38 +74,41 @@ const NextSteps: React.FC = () => {
   return (
     <section id="the-journey" className="py-24 bg-white overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 lg:gap-24 items-center">
-          <div className="text-left">
-            <h2 className="text-5xl md:text-6xl font-[900] text-[#0f172a] mb-8 uppercase tracking-tighter">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+          <div>
+            <h2 className="text-sm font-bold tracking-widest text-[#a52424] uppercase mb-2">Our Pathway</h2>
+            <h3 className="text-4xl md:text-5xl font-black text-gray-900 mb-6 leading-tight">
               The Journey
-            </h2>
-            <div className="space-y-6">
-              <p className="text-xl text-gray-500 leading-relaxed font-medium">
-                Whether you are just starting or already matured in your relationship with Christ and looking for a place to call home, we invite you to join us in this wonderful, life changing journey. 
-              </p>
-              <p className="text-xl text-gray-500 leading-relaxed font-medium">
-                We invite you to join us as we follow Christ, aligning our thoughts and will with His.
-              </p>
+            </h3>
+            <p className="text-lg text-gray-600 mb-6 leading-relaxed">
+              Whether you are just starting or already matured in your relationship with Christ and looking for a place to call home, we invite you to join us in this wonderful, life changing journey. 
+            </p>
+            <p className="text-lg text-gray-600 mb-8 leading-relaxed">
+              We invite you to join us as we follow Christ, aligning our thoughts and will with His.
+            </p>
+
+            <div className="p-6 bg-red-50/60 border border-red-100 rounded-2xl text-gray-700 italic text-base">
+              "Connecting with our community is the best way to discover your gifts and experience real life transformation together."
             </div>
           </div>
 
           <div className="relative">
+            <div className="absolute -top-10 -right-10 w-32 h-32 bg-red-500/10 rounded-full blur-3xl"></div>
             {/* The Red Card Container */}
-            <div className="bg-[#a52424] p-10 md:p-14 rounded-[3.5rem] text-white shadow-[0_20px_50px_rgba(0,0,0,0.15)] relative overflow-hidden">
-              <div className="absolute -bottom-24 -right-24 w-80 h-80 bg-white/5 rounded-full pointer-events-none"></div>
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-gradient-to-br from-white/5 to-transparent pointer-events-none"></div>
+            <div className="bg-[#a52424] text-white p-8 md:p-10 rounded-3xl relative z-10 shadow-[0_20px_50px_rgba(0,0,0,0.15)] overflow-hidden">
+              <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2"></div>
               
-              <h3 className="text-4xl font-black mb-12 uppercase tracking-tighter text-white">The Journey</h3>
+              <h3 className="text-2xl md:text-3xl font-black mb-6 uppercase tracking-tight text-white">The Journey</h3>
               
-              <ul className="space-y-10 mb-14 relative z-10">
+              <ul className="space-y-5 mb-8 relative z-10">
                 {steps.map((step) => (
-                  <li key={step.id} className="flex items-start space-x-6 group">
-                    <span className="flex-shrink-0 w-11 h-11 rounded-full bg-white/20 flex items-center justify-center font-bold text-lg group-hover:bg-white group-hover:text-[#a52424] transition-all duration-300">
+                  <li key={step.id} className="flex items-start space-x-4 group">
+                    <span className="flex-shrink-0 w-8 h-8 rounded-full bg-white/20 flex items-center justify-center font-bold text-sm group-hover:bg-white group-hover:text-[#a52424] transition-all duration-300">
                       {step.id}
                     </span>
                     <div>
-                      <h4 className="text-2xl font-black leading-tight tracking-tight">{step.title}</h4>
-                      <p className="text-white/80 text-base mt-1.5 font-medium">{step.desc}</p>
+                      <h4 className="font-bold text-white text-base md:text-lg leading-snug">{step.title}</h4>
+                      <p className="text-white/80 text-sm mt-0.5">{step.desc}</p>
                     </div>
                   </li>
                 ))}
@@ -113,11 +116,12 @@ const NextSteps: React.FC = () => {
 
               <button 
                 onClick={() => setIsModalOpen(true)}
-                className="w-full bg-white text-[#a52424] py-6 rounded-[1.5rem] font-black text-xl hover:bg-gray-100 transition-all transform hover:scale-[1.02] shadow-xl uppercase tracking-widest relative z-10"
+                className="w-full bg-white text-[#a52424] py-3.5 px-6 rounded-2xl font-black text-base md:text-lg hover:bg-gray-100 transition-all transform hover:scale-[1.01] shadow-lg uppercase tracking-wider relative z-10"
               >
                 I'm New Here
               </button>
             </div>
+            <div className="absolute -bottom-0 -right-0 w-full h-full border-2 border-[#a52424] rounded-3xl opacity-20 pointer-events-none"></div>
           </div>
         </div>
       </div>
