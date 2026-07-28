@@ -76,19 +76,19 @@ const NextSteps: React.FC = () => {
   };
 
   return (
-    <section id="the-journey" className="py-24 bg-white overflow-hidden">
+    <section id="the-journey" className="py-24 bg-[#181e29] text-white overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
           <div>
-            <h2 className="text-sm font-bold tracking-widest text-[#a52424] uppercase mb-2">Our Pathway</h2>
-            <h3 className="text-4xl md:text-5xl font-black text-gray-900 mb-6 leading-tight">
+            <h2 className="text-sm font-bold tracking-widest text-red-400 uppercase mb-2">Our Pathway</h2>
+            <h3 className="text-4xl md:text-5xl font-black text-white mb-6 leading-tight">
               The Journey
             </h3>
-            <p className="text-lg text-gray-600 mb-8 leading-relaxed">
-              Whether you are just starting or already matured in your relationship with Christ and looking for a place to call home, we invite you to join us in this wonderful, life changing journey. 
+            <p className="text-lg text-gray-300 mb-8 leading-relaxed">
+              Whether you are just starting or already matured in your relationship with Christ, we invite you to join us in this wonderful, life changing journey. 
             </p>
 
-            <div className="p-6 bg-red-50/60 border border-red-100 rounded-2xl text-gray-700 italic text-base">
+            <div className="p-6 bg-white/5 border border-white/10 rounded-2xl text-gray-300 italic text-base">
               "Connecting with our community is the best way to discover your gifts and experience real life transformation together."
             </div>
           </div>
