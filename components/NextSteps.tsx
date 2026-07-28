@@ -35,13 +35,17 @@ const NextSteps: React.FC = () => {
     setErrorMsg('');
 
     try {
+      const trimmedMessage = message.trim();
       await addDoc(collection(db, 'submissions'), {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         email: email.trim().toLowerCase(),
         phone: phone.trim(),
         interestedIn,
-        message: message.trim(),
+        message: trimmedMessage,
+        userMessage: trimmedMessage,
+        comments: trimmedMessage,
+        request: trimmedMessage,
         status: 'new',
         createdAt: new Date().toISOString(),
       });
@@ -80,11 +84,8 @@ const NextSteps: React.FC = () => {
             <h3 className="text-4xl md:text-5xl font-black text-gray-900 mb-6 leading-tight">
               The Journey
             </h3>
-            <p className="text-lg text-gray-600 mb-6 leading-relaxed">
-              Whether you are just starting or already matured in your relationship with Christ and looking for a place to call home, we invite you to join us in this wonderful, life changing journey. 
-            </p>
             <p className="text-lg text-gray-600 mb-8 leading-relaxed">
-              We invite you to join us as we follow Christ, aligning our thoughts and will with His.
+              Whether you are just starting or already matured in your relationship with Christ and looking for a place to call home, we invite you to join us in this wonderful, life changing journey. 
             </p>
 
             <div className="p-6 bg-red-50/60 border border-red-100 rounded-2xl text-gray-700 italic text-base">
@@ -97,8 +98,6 @@ const NextSteps: React.FC = () => {
             {/* The Red Card Container */}
             <div className="bg-[#a52424] text-white p-8 md:p-10 rounded-3xl relative z-10 shadow-[0_20px_50px_rgba(0,0,0,0.15)] overflow-hidden">
               <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2"></div>
-              
-              <h3 className="text-2xl md:text-3xl font-black mb-6 uppercase tracking-tight text-white">The Journey</h3>
               
               <ul className="space-y-5 mb-8 relative z-10">
                 {steps.map((step) => (

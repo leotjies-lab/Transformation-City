@@ -811,13 +811,22 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
     }
   };
 
+  // Helper to safely extract submission message from various field name aliases
+  const getSubmissionMessage = (sub: FormSubmission | any): string => {
+    if (!sub) return '';
+    const msg = sub.message ?? sub.userMessage ?? sub.comments ?? sub.comment ?? sub.request ?? sub.notes ?? sub.body ?? sub.description ?? '';
+    return typeof msg === 'string' ? msg.trim() : String(msg).trim();
+  };
+
   // Filter Logic
   const filteredSubmissions = submissions.filter((item) => {
     const fullName = `${item.firstName} ${item.lastName}`.toLowerCase();
     const emailMatch = item.email.toLowerCase().includes(searchQuery.toLowerCase());
     const nameMatch = fullName.includes(searchQuery.toLowerCase());
     const phoneMatch = item.phone ? item.phone.includes(searchQuery) : false;
-    const searchMatches = nameMatch || emailMatch || phoneMatch;
+    const msgText = getSubmissionMessage(item).toLowerCase();
+    const messageMatch = msgText.includes(searchQuery.toLowerCase());
+    const searchMatches = nameMatch || emailMatch || phoneMatch || messageMatch;
 
     const statusMatches = statusFilter === 'all' || item.status === statusFilter;
     const interestMatches = interestFilter === 'all' || item.interestedIn === interestFilter;
@@ -829,17 +838,18 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
   const exportToCSV = () => {
     if (filteredSubmissions.length === 0) return;
     
-    const headers = ['First Name', 'Last Name', 'Email', 'Phone', 'Interested In', 'Message', 'Status', 'Admin Notes', 'Date Submitted'];
+    const headers = ['First Name', 'Last Name', 'Email', 'Phone', 'Interested In', 'User Message', 'Status', 'Admin Notes', 'Date Submitted'];
     const csvRows = [headers.join(',')];
 
     filteredSubmissions.forEach((sub) => {
+      const msg = getSubmissionMessage(sub);
       const row = [
         `"${(sub.firstName || '').replace(/"/g, '""')}"`,
         `"${(sub.lastName || '').replace(/"/g, '""')}"`,
         `"${(sub.email || '').replace(/"/g, '""')}"`,
         `"${(sub.phone || '').replace(/"/g, '""')}"`,
         `"${(sub.interestedIn || '').replace(/"/g, '""')}"`,
-        `"${(sub.message || '').replace(/"/g, '""')}"`,
+        `"${msg.replace(/"/g, '""')}"`,
         `"${(sub.status || '').replace(/"/g, '""')}"`,
         `"${(sub.adminNotes || '').replace(/"/g, '""')}"`,
         `"${sub.createdAt ? new Date(sub.createdAt).toLocaleString() : ''}"`
@@ -1798,6 +1808,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
                 <thead>
                   <tr className="bg-gray-950/80 border-b border-white/10 text-[11px] font-black uppercase tracking-wider text-gray-400">
                     <th className="py-4 px-6">Name & Details</th>
+                    <th className="py-4 px-6">Captured Message / Request</th>
                     <th className="py-4 px-6">Interested In</th>
                     <th className="py-4 px-6">Submitted Date</th>
                     <th className="py-4 px-6">Status</th>
@@ -1807,6 +1818,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
                 <tbody className="divide-y divide-white/5 text-sm">
                   {filteredSubmissions.map((sub) => {
                     const fullName = `${sub.firstName} ${sub.lastName}`;
+                    const userMsg = getSubmissionMessage(sub);
                     const dateStr = sub.createdAt ? new Date(sub.createdAt).toLocaleString(undefined, {
                       month: 'short',
                       day: 'numeric',
@@ -1837,6 +1849,22 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
                               </a>
                             )}
                           </div>
+                        </td>
+
+                        <td className="py-4 px-6 max-w-xs">
+                          {userMsg ? (
+                            <div className="bg-gray-950 border border-white/10 p-3 rounded-2xl text-xs text-gray-200 leading-relaxed shadow-inner">
+                              <div className="flex items-center space-x-1.5 text-red-400 font-bold text-[10px] uppercase tracking-wider mb-1">
+                                <MessageSquare className="w-3 h-3 flex-shrink-0" />
+                                <span>Captured Message</span>
+                              </div>
+                              <p className="line-clamp-3 italic text-gray-300 font-normal">
+                                "{userMsg}"
+                              </p>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-500 italic">No message included</span>
+                          )}
                         </td>
 
                         <td className="py-4 px-6">
@@ -1949,11 +1977,16 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
             </div>
 
             <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-gray-400 block mb-2">
-                User Message / Request
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-400 block mb-2 flex items-center space-x-1.5">
+                <MessageSquare className="w-4 h-4 text-red-400" />
+                <span>Captured Message / Request</span>
               </span>
-              <div className="bg-gray-950 p-5 rounded-2xl border border-white/5 text-gray-200 text-sm whitespace-pre-wrap leading-relaxed">
-                {selectedSubmission.message ? selectedSubmission.message : <em className="text-gray-500">No message provided.</em>}
+              <div className="bg-gray-950 p-5 rounded-2xl border border-white/10 text-gray-100 text-sm whitespace-pre-wrap leading-relaxed">
+                {getSubmissionMessage(selectedSubmission) ? (
+                  getSubmissionMessage(selectedSubmission)
+                ) : (
+                  <em className="text-gray-500">No message provided with this submission card.</em>
+                )}
               </div>
             </div>
 

@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { Check } from 'lucide-react';
 
 const About: React.FC = () => {
   return (
@@ -9,31 +10,41 @@ const About: React.FC = () => {
           <div>
             <h2 className="text-sm font-bold tracking-widest text-church-red uppercase mb-2">Our Vision</h2>
             <h3 className="text-4xl md:text-5xl font-black text-gray-900 mb-6 leading-tight">
-              Being God’s Transformation Agent in our City
+              As a church, to be God’s Transformation Agent in our City
             </h3>
-            <p className="text-lg text-gray-600 mb-8 leading-relaxed">
-              We are committed to a journey of growth, focusing on three primary goals. 
+            <p className="text-lg text-gray-600 mb-6 leading-relaxed">
+              We are committed to a journey of growth, focusing on three primary goals.
             </p>
-            
-            <div className="space-y-6">
-              {[
-                { title: 'Knowing God', desc: 'Grow together in our knowledge of Christ.' },
-                { title: 'Loving People', desc: 'With a sincere and heartfelt devotion that reflects Christ.' },
-                { title: 'Transforming World', desc: 'Go and be transformation in every sphere of our city.' }
-              ].map((goal, i) => (
-                <div key={i} className="flex items-start space-x-4">
-                  <div className="bg-church-red/10 p-2 rounded-lg mt-1">
-                    <svg className="w-5 h-5 text-church-red" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"></path>
-                    </svg>
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-gray-900">{goal.title}</h4>
-                    <p className="text-gray-500">{goal.desc}</p>
-                  </div>
+
+            <div className="space-y-6 mb-8">
+              <div className="flex items-start space-x-4">
+                <Check className="w-5 h-5 text-church-red flex-shrink-0 mt-1 stroke-[2.5]" />
+                <div>
+                  <h4 className="text-lg font-bold text-gray-900">Knowing God</h4>
+                  <p className="text-gray-600">Grow together in our knowledge of Christ.</p>
                 </div>
-              ))}
+              </div>
+
+              <div className="flex items-start space-x-4">
+                <Check className="w-5 h-5 text-church-red flex-shrink-0 mt-1 stroke-[2.5]" />
+                <div>
+                  <h4 className="text-lg font-bold text-gray-900">Loving People</h4>
+                  <p className="text-gray-600">With a sincere and heartfelt devotion that reflects Christ.</p>
+                </div>
+              </div>
+
+              <div className="flex items-start space-x-4">
+                <Check className="w-5 h-5 text-church-red flex-shrink-0 mt-1 stroke-[2.5]" />
+                <div>
+                  <h4 className="text-lg font-bold text-gray-900">Transforming World</h4>
+                  <p className="text-gray-600">Go and be transformation in every sphere of our city.</p>
+                </div>
+              </div>
             </div>
+
+            <p className="text-lg text-gray-600 mb-8 leading-relaxed">
+              Through worshipping together, serving our neighbors, and building deep relationships, we desire to reflect God's love and make a lasting impact in our city.
+            </p>
           </div>
 
           <div className="relative">

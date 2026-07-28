@@ -15,7 +15,7 @@ const Services: React.FC = () => {
             </div>
             
             <p className="text-xl text-gray-400 font-medium">
-              Come early for fellowship at the Connect Café (08:20 AM).
+              Don't run off too quickly! We’d love to catch up over coffee right after the morning service.
             </p>
 
             <ul className="space-y-6 mt-12">
@@ -45,12 +45,21 @@ const Services: React.FC = () => {
               </svg>
             </div>
             <h3 className="text-sm font-bold mb-4 uppercase text-[#d32f2f] tracking-[0.3em]">WHERE WE MEET</h3>
-            <p className="text-4xl md:text-5xl font-black mb-6 leading-tight">Brackenhurst,<br/>Alberton</p>
-            <address className="not-italic text-gray-400 mb-10 text-lg leading-relaxed max-w-xs">
-              120A McBride Street,<br/>
-              Brackenhurst, Alberton,<br/>
-              South Africa
+            <p className="text-3xl sm:text-4xl md:text-5xl font-black mb-6 leading-tight">Brackenhurst, Alberton</p>
+            <address className="not-italic text-gray-400 mb-6 text-lg leading-relaxed">
+              120A McBride Street, Brackenhurst, Alberton, South Africa
             </address>
+            
+            <div className="mb-8 space-y-2 text-sm text-gray-300">
+              <p className="flex items-center space-x-2">
+                <span className="text-[#d32f2f] font-bold">Email:</span>
+                <a href="mailto:tcc.bracken@gmail.com" className="hover:text-white transition-colors">tcc.bracken@gmail.com</a>
+              </p>
+              <p className="flex items-center space-x-2">
+                <span className="text-[#d32f2f] font-bold">Phone:</span>
+                <a href="tel:0825580141" className="hover:text-white transition-colors font-bold">082 558 0141</a>
+              </p>
+            </div>
             <a 
               href="https://www.google.com/maps/search/120A+McBride+Street,+Brackenhurst,+Alberton" 
               target="_blank" 

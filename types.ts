@@ -29,6 +29,9 @@ export interface FormSubmission {
   phone?: string;
   interestedIn: string;
   message?: string;
+  userMessage?: string;
+  comments?: string;
+  request?: string;
   status: SubmissionStatus;
   adminNotes?: string;
   createdAt: string;

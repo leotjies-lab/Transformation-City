@@ -13,7 +13,7 @@ const Ministries: React.FC = () => {
               Transformation Through Connection & Service
             </h3>
             <p className="text-lg text-gray-600">
-              We believe love is a verb. We are called to serve one another humbly in love, putting aside our own preferences for the community.
+              We believe love is a verb. We are called to serve one another humbly in love, putting aside our own preferences.
             </p>
           </div>
         </div>
