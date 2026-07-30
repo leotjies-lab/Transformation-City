@@ -15,8 +15,6 @@ export const TCCLogo: React.FC<TCCLogoProps> = ({
   const isLightBg = variant === 'light';
 
   // Branding Colors matching official TCC seal
-  const crossColor = '#a81b1e'; // Deep Red
-  const darkBgColor = '#22252a'; // Dark Charcoal
   const textColor = isLightBg ? '#0f172a' : '#ffffff';
   const subtextColor = isLightBg ? '#475569' : '#cbd5e1';
 
@@ -31,70 +29,69 @@ export const TCCLogo: React.FC<TCCLogoProps> = ({
       >
         <defs>
           <clipPath id="sealCircleClip">
-            <circle cx="100" cy="100" r="92" />
+            <circle cx="100" cy="100" r="88" />
           </clipPath>
         </defs>
 
-        {/* Outer Shadow Ring / Frame */}
-        <circle cx="100" cy="100" r="96" fill={darkBgColor} />
+        {/* Base dark background circle */}
+        <circle cx="100" cy="100" r="97" fill="#1c1d21" />
 
-        {/* Clip graphics strictly within circle */}
+        {/* Clip graphics strictly within inner circle */}
         <g clipPath="url(#sealCircleClip)">
           {/* Upper Sky - Pure White */}
-          <rect x="0" y="0" width="200" height="200" fill="#ffffff" />
-
+          <path d="M 10 100 A 90 90 0 0 1 190 100 Z" fill="#ffffff" />
+          
           {/* Lower Base - Dark Charcoal */}
-          <rect x="0" y="102" width="200" height="98" fill={darkBgColor} />
+          <rect x="0" y="98" width="200" height="102" fill="#1c1d21" />
 
-          {/* City Skyline Silhouette (Joburg / City Skyline) */}
-          <g fill={darkBgColor}>
+          {/* City Skyline Silhouette (Joburg Skyline with Hillbrow Tower) */}
+          <g fill="#1c1d21">
             {/* Left skyline blocks */}
-            <rect x="18" y="88" width="16" height="20" />
-            <rect x="36" y="72" width="22" height="36" />
-            <rect x="60" y="82" width="16" height="26" />
-            <rect x="78" y="76" width="18" height="32" />
+            <rect x="18" y="84" width="14" height="20" />
+            <rect x="34" y="68" width="18" height="34" />
+            <rect x="54" y="52" width="24" height="50" />
+            <rect x="80" y="74" width="16" height="28" />
+            <rect x="98" y="60" width="18" height="42" />
 
-            {/* Center Skyscraper */}
-            <rect x="98" y="52" width="30" height="56" />
-            <rect x="130" y="84" width="12" height="24" />
-
-            {/* Sentech / Hillbrow Tower Spire */}
-            <rect x="144" y="30" width="6" height="78" />
-            <path d="M140 50 L154 50 L150 64 L144 64 Z" />
-            <rect x="146" y="18" width="2" height="14" />
+            {/* Hillbrow Tower (Spire with pod) */}
+            <rect x="119" y="24" width="5" height="78" />
+            {/* Top antenna spike */}
+            <rect x="120.5" y="14" width="2" height="12" />
+            {/* Tower Observation Pod */}
+            <path d="M 114 36 H 129 L 126 50 H 117 Z" />
 
             {/* Right skyline blocks */}
-            <rect x="154" y="70" width="18" height="38" />
-            <rect x="174" y="82" width="16" height="26" />
+            <rect x="138" y="66" width="20" height="36" />
+            <rect x="160" y="78" width="18" height="24" />
           </g>
 
-          {/* Red Cross "t" & Underline Bar */}
-          <g fill={crossColor}>
-            {/* Vertical Stem */}
-            <rect x="40" y="64" width="16" height="78" rx="1" />
-            {/* Crossbar */}
-            <rect x="22" y="80" width="52" height="14" rx="1" />
-            {/* Red Underline Bar below CC */}
-            <rect x="40" y="136" width="128" height="9" rx="1" />
+          {/* Red Cross "t" & Connected Underline Bar */}
+          <g fill="#b91c1c">
+            {/* Horizontal Crossbar of 't' */}
+            <rect x="28" y="78" width="54" height="16" rx="1.5" />
+            {/* Vertical Stem of 't' */}
+            <rect x="48" y="60" width="18" height="92" rx="1.5" />
+            {/* Red Underline Bar running below 'CC' */}
+            <rect x="48" y="136" width="112" height="16" rx="1.5" />
           </g>
 
           {/* White Giant "CC" Letters */}
           <g fill="#ffffff">
             {/* First 'C' */}
-            <path d="M 104 80 H 76 V 132 H 104 V 118 H 92 V 94 H 104 Z" />
+            <path d="M 106 78 H 80 C 73 78 68 83 68 90 V 124 C 68 131 73 136 80 136 H 106 V 118 H 88 C 85 118 84 116 84 113 V 101 C 84 98 85 96 88 96 H 106 Z" />
             {/* Second 'C' */}
-            <path d="M 142 80 H 114 V 132 H 142 V 118 H 130 V 94 H 142 Z" />
+            <path d="M 152 78 H 126 C 119 78 114 83 114 90 V 124 C 114 131 119 136 126 136 H 152 V 118 H 134 C 131 118 130 116 130 113 V 101 C 130 98 131 96 134 96 H 152 Z" />
           </g>
 
           {/* TRANSFORMATION Text */}
           <text
             x="100"
-            y="158"
+            y="163"
             textAnchor="middle"
             fill="#ffffff"
             fontSize="15.5"
             fontWeight="900"
-            fontFamily="Impact, 'Arial Black', system-ui, -apple-system, sans-serif"
+            fontFamily="Impact, 'Arial Black', sans-serif"
             letterSpacing="0.8"
           >
             TRANSFORMATION
@@ -103,25 +100,35 @@ export const TCCLogo: React.FC<TCCLogoProps> = ({
           {/* CITY CHURCH Text */}
           <text
             x="100"
-            y="173"
+            y="176"
             textAnchor="middle"
             fill="#ffffff"
             fontSize="9"
             fontWeight="800"
-            fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
-            letterSpacing="2.2"
+            fontFamily="system-ui, -apple-system, sans-serif"
+            letterSpacing="2"
           >
             CITY CHURCH
           </text>
         </g>
 
-        {/* Outer Crisp White Ring Border */}
+        {/* Inner Thin White Ring Border */}
         <circle
           cx="100"
           cy="100"
-          r="93"
+          r="89"
           stroke="#ffffff"
-          strokeWidth="6"
+          strokeWidth="2.5"
+          fill="none"
+        />
+
+        {/* Outer White Ring Border */}
+        <circle
+          cx="100"
+          cy="100"
+          r="95"
+          stroke="#ffffff"
+          strokeWidth="3.5"
           fill="none"
         />
       </svg>
@@ -148,5 +155,6 @@ export const TCCLogo: React.FC<TCCLogoProps> = ({
 };
 
 export default TCCLogo;
+
 
 

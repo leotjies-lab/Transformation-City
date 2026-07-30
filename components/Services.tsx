@@ -25,9 +25,9 @@ const Services: React.FC = () => {
 
             <ul className="space-y-5">
               {[
-                'Worship',
-                'Practical Bible Teaching',
-                'Little Lights (Kids Ministry)'
+                'Christ focus worship',
+                'Practical bible teaching',
+                'Little Lights (kids ministry)'
               ].map((item, idx) => (
                 <li key={idx} className="flex items-center group">
                   <div className="flex-shrink-0 w-8 h-8 rounded-full bg-white/20 border border-white/30 flex items-center justify-center mr-5 shadow-md">

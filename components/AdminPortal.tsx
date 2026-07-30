@@ -49,7 +49,6 @@ import {
   Calendar,
   CalendarDays,
   Plus,
-  MapPin,
   Tag,
   Repeat,
   Ban,
@@ -94,7 +93,6 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
   const [eventTitle, setEventTitle] = useState('');
   const [eventDate, setEventDate] = useState('');
   const [eventTime, setEventTime] = useState('');
-  const [eventLocation, setEventLocation] = useState('');
   const [eventCategory, setEventCategory] = useState('Sunday Service');
   const [eventDescription, setEventDescription] = useState('');
   const [eventColor, setEventColor] = useState('#d32f2f');
@@ -257,7 +255,6 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
     const todayStr = new Date().toISOString().split('T')[0];
     setEventDate(todayStr);
     setEventTime('10:00 AM - 12:00 PM');
-    setEventLocation('TCC Main Sanctuary');
     setEventCategory('Sunday Service');
     setEventDescription('');
     setEventColor('#d32f2f');
@@ -274,7 +271,6 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
     setEventTitle(ev.title || '');
     setEventDate(ev.date || new Date().toISOString().split('T')[0]);
     setEventTime(ev.time || '');
-    setEventLocation(ev.location || '');
     setEventCategory(ev.category || 'Sunday Service');
     setEventDescription(ev.description || '');
     setEventColor(ev.color || '#d32f2f');
@@ -387,7 +383,6 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
         title: eventTitle.trim(),
         date: eventDate,
         time: eventTime.trim(),
-        location: eventLocation.trim() || 'Transformation City Church',
         category: eventCategory,
         description: eventDescription.trim(),
         color: eventColor,
@@ -1344,12 +1339,6 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
                                     <span>{item.event.time}</span>
                                   </span>
                                 )}
-                                {item.event.location && (
-                                  <span className="flex items-center space-x-1">
-                                    <MapPin className="w-3 h-3 text-gray-500" />
-                                    <span>{item.event.location}</span>
-                                  </span>
-                                )}
                               </div>
                             </div>
                           </div>
@@ -1450,12 +1439,6 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
                               <div className="flex items-center space-x-2">
                                 <Clock className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
                                 <span>{ev.time}</span>
-                              </div>
-                            )}
-                            {ev.location && (
-                              <div className="flex items-center space-x-2">
-                                <MapPin className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
-                                <span>{ev.location}</span>
                               </div>
                             )}
                           </div>
@@ -2340,19 +2323,6 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
                   )}
                 </div>
               )}
-
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">
-                  Location
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. TCC Main Sanctuary"
-                  value={eventLocation}
-                  onChange={(e) => setEventLocation(e.target.value)}
-                  className="w-full bg-gray-950 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#a52424]"
-                />
-              </div>
 
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-400 mb-1.5">

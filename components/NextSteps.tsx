@@ -127,40 +127,43 @@ const NextSteps: React.FC = () => {
 
       {/* Detail Modal & Sign-up Form */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-2xl max-h-[90vh] overflow-y-auto relative shadow-2xl">
+        <div className="fixed inset-0 z-[60] overflow-y-auto p-4 sm:p-6 md:p-8 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl sm:rounded-[2.5rem] w-full max-w-2xl max-h-[90vh] flex flex-col relative shadow-2xl overflow-hidden my-auto border border-gray-100">
             <button 
               onClick={handleCloseModal}
-              className="absolute top-6 right-6 text-gray-400 hover:text-gray-900 transition-colors"
+              className="absolute top-5 right-5 sm:top-6 sm:right-6 z-20 text-gray-400 hover:text-gray-900 transition-colors bg-gray-100 hover:bg-gray-200 p-2 rounded-full"
+              aria-label="Close modal"
             >
-              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+              <svg className="w-6 h-6 sm:w-7 sm:h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
             
-            <div className="p-8 md:p-12">
+            <div className="p-6 sm:p-8 md:p-10 overflow-y-auto">
               {isSubmitted ? (
                 <div className="text-center py-8">
                   <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6">
                     <CheckCircle className="w-12 h-12" />
                   </div>
-                  <h3 className="text-3xl font-black text-gray-900 mb-4 uppercase tracking-tighter">
+                  <h3 className="text-2xl sm:text-3xl font-black text-gray-900 mb-4 uppercase tracking-tighter">
                     Welcome to the Family!
                   </h3>
-                  <p className="text-gray-600 text-lg mb-8 max-w-md mx-auto">
+                  <p className="text-gray-600 text-base sm:text-lg mb-8 max-w-md mx-auto">
                     Thank you, <span className="font-bold text-gray-900">{firstName}</span>! Your request has been saved and sent directly to the TCC team. Someone will be in touch with you shortly.
                   </p>
                   <button
                     onClick={handleCloseModal}
-                    className="bg-[#a52424] text-white px-8 py-4 rounded-2xl font-black text-lg hover:bg-red-700 transition-all shadow-lg uppercase tracking-wider"
+                    className="bg-[#a52424] text-white px-8 py-3.5 rounded-2xl font-black text-base sm:text-lg hover:bg-red-700 transition-all shadow-lg uppercase tracking-wider"
                   >
                     Done
                   </button>
                 </div>
               ) : (
                 <>
-                  <h3 className="text-3xl font-black text-gray-900 mb-4 uppercase tracking-tighter">Start The Journey</h3>
-                  <p className="text-gray-600 mb-8 text-lg">
-                    Tell us a little about yourself and which step of the journey you're interested in taking. We'd love to connect and welcome you to the family!
-                  </p>
+                  <div className="pr-10">
+                    <h3 className="text-2xl sm:text-3xl font-black text-gray-900 mb-2 uppercase tracking-tighter">Start The Journey</h3>
+                    <p className="text-gray-600 mb-6 text-sm sm:text-base leading-relaxed">
+                      Tell us a little about yourself and which step of the journey you're interested in taking. We'd love to connect and welcome you to the family!
+                    </p>
+                  </div>
 
                   {errorMsg && (
                     <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-2xl text-sm font-medium">
@@ -168,10 +171,10 @@ const NextSteps: React.FC = () => {
                     </div>
                   )}
 
-                  <form onSubmit={handleSubmit} className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
                       <div>
-                        <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">
+                        <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1.5 uppercase tracking-wide">
                           First Name <span className="text-red-500">*</span>
                         </label>
                         <input 
@@ -179,12 +182,12 @@ const NextSteps: React.FC = () => {
                           required
                           value={firstName}
                           onChange={(e) => setFirstName(e.target.value)}
-                          className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all" 
+                          className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all text-sm sm:text-base" 
                           placeholder="John" 
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">
+                        <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1.5 uppercase tracking-wide">
                           Last Name <span className="text-red-500">*</span>
                         </label>
                         <input 
@@ -192,15 +195,15 @@ const NextSteps: React.FC = () => {
                           required
                           value={lastName}
                           onChange={(e) => setLastName(e.target.value)}
-                          className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all" 
+                          className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all text-sm sm:text-base" 
                           placeholder="Doe" 
                         />
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
                       <div>
-                        <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">
+                        <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1.5 uppercase tracking-wide">
                           Email Address <span className="text-red-500">*</span>
                         </label>
                         <input 
@@ -208,30 +211,30 @@ const NextSteps: React.FC = () => {
                           required
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
-                          className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all" 
+                          className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all text-sm sm:text-base" 
                           placeholder="john@example.com" 
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">
+                        <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1.5 uppercase tracking-wide">
                           Phone Number
                         </label>
                         <input 
                           type="tel" 
                           value={phone}
                           onChange={(e) => setPhone(e.target.value)}
-                          className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all" 
+                          className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all text-sm sm:text-base" 
                           placeholder="+27 82 123 4567" 
                         />
                       </div>
                     </div>
 
                     <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">Interested In</label>
+                      <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Interested In</label>
                       <select 
                         value={interestedIn}
                         onChange={(e) => setInterestedIn(e.target.value)}
-                        className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all appearance-none"
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all text-sm sm:text-base appearance-none"
                       >
                         <option value="Join Our Family">Join Our Family</option>
                         <option value="Impact Life Journey">Impact Life Journey</option>
@@ -241,12 +244,12 @@ const NextSteps: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">Any Message?</label>
+                      <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Any Message?</label>
                       <textarea 
-                        rows={4} 
+                        rows={3} 
                         value={message}
                         onChange={(e) => setMessage(e.target.value)}
-                        className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all" 
+                        className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all text-sm sm:text-base" 
                         placeholder="I'd love to know more about..."
                       ></textarea>
                     </div>
@@ -254,7 +257,7 @@ const NextSteps: React.FC = () => {
                     <button 
                       type="submit"
                       disabled={isSubmitting}
-                      className="w-full bg-[#a52424] text-white py-5 rounded-2xl font-black text-xl hover:bg-red-700 transition-all shadow-lg shadow-red-500/20 uppercase tracking-widest flex items-center justify-center space-x-2 disabled:opacity-60"
+                      className="w-full bg-[#a52424] text-white py-4 rounded-2xl font-black text-lg hover:bg-red-700 transition-all shadow-lg shadow-red-500/20 uppercase tracking-widest flex items-center justify-center space-x-2 disabled:opacity-60"
                     >
                       {isSubmitting ? (
                         <>

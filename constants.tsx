@@ -28,13 +28,33 @@ export const MINISTRIES: Ministry[] = [
   },
   {
     title: 'Little Lights - TCC Kids',
-    description: 'Growing a culture of little transformation agents.',
+    description: 'Growing little transformation agents.',
     icon: '✨',
   },
   {
     title: 'Connect Cafe',
     description: 'Motivating a culture of fellowship.',
     icon: '☕',
+  },
+  {
+    title: 'Soup Kitchen',
+    description: 'Serving our community through love, care, and practical outreach.',
+    icon: '🍲',
+  },
+  {
+    title: 'Mentors',
+    description: 'Building a Godly men culture',
+    icon: '🤝',
+  },
+  {
+    title: 'Impact Life Journey',
+    description: 'Developing a culture of growth',
+    icon: '🌱',
+  },
+  {
+    title: 'Connect Groups',
+    description: 'Fostering deep relationships, and a culture of "stronger together"',
+    icon: '👥',
   },
 ];
 

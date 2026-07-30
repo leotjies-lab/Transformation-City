@@ -13,7 +13,6 @@ import {
   ChevronRight, 
   Calendar as CalendarIcon, 
   Clock, 
-  MapPin, 
   Tag, 
   X, 
   Filter, 
@@ -34,7 +33,6 @@ export const DEFAULT_INITIAL_EVENTS: Omit<TCCEvent, 'id'>[] = [
     title: 'Sunday Worship & Word',
     date: '2026-07-26',
     time: '09:00 AM - 11:00 AM',
-    location: 'TCC Main Sanctuary',
     category: 'Sunday Service',
     description: 'Join us for an uplifting morning of dynamic worship, prophetic teaching, and community fellowship.',
     color: '#d32f2f',
@@ -46,7 +44,6 @@ export const DEFAULT_INITIAL_EVENTS: Omit<TCCEvent, 'id'>[] = [
     title: 'Wednesday Midweek Prayer Night',
     date: '2026-07-29',
     time: '07:00 PM - 08:30 PM',
-    location: 'Prayer Chapel & Online Zoom',
     category: 'Prayer & Worship',
     description: 'Gathering together to seek God in fervent prayer for our church, families, and city.',
     color: '#2563eb',
@@ -58,7 +55,6 @@ export const DEFAULT_INITIAL_EVENTS: Omit<TCCEvent, 'id'>[] = [
     title: 'Identity Youth Friday Rally',
     date: '2026-07-31',
     time: '06:30 PM - 09:00 PM',
-    location: 'Youth Center Auditorium',
     category: 'Youth & Kids',
     description: 'High-energy youth worship, real conversations, games, and fellowship for teens.',
     color: '#dc2626',
@@ -70,7 +66,6 @@ export const DEFAULT_INITIAL_EVENTS: Omit<TCCEvent, 'id'>[] = [
     title: 'Saturday Morning Intercession',
     date: '2026-08-01',
     time: '07:00 AM - 08:00 AM',
-    location: 'Main Sanctuary',
     category: 'Prayer & Worship',
     description: 'Early morning prayer watch starting our month with strategic prayer.',
     color: '#2563eb',
@@ -82,7 +77,6 @@ export const DEFAULT_INITIAL_EVENTS: Omit<TCCEvent, 'id'>[] = [
     title: 'Community Outreach & Food Drive',
     date: '2026-08-08',
     time: '10:00 AM - 02:00 PM',
-    location: 'TCC Grounds & City Center',
     category: 'Community Outreach',
     description: 'Serving our local community with free food packs, clothing drive, and prayers of hope.',
     color: '#059669',
@@ -94,7 +88,6 @@ export const DEFAULT_INITIAL_EVENTS: Omit<TCCEvent, 'id'>[] = [
     title: 'Night of Prophetic Worship & Healing',
     date: '2026-08-14',
     time: '07:00 PM - 09:30 PM',
-    location: 'Main Sanctuary',
     category: 'Special Event',
     description: 'An extended evening of unhurried worship, prayer ministry, and physical healing prayers.',
     color: '#7c3aed',
@@ -106,7 +99,6 @@ export const DEFAULT_INITIAL_EVENTS: Omit<TCCEvent, 'id'>[] = [
     title: 'Couples & Family Fellowship',
     date: '2026-08-22',
     time: '05:00 PM - 08:00 PM',
-    location: 'Connect Cafe Hall',
     category: 'Fellowship & Cafe',
     description: 'An encouraging evening for married couples and families with dinner, games, and table talks.',
     color: '#d97706',
@@ -118,7 +110,6 @@ export const DEFAULT_INITIAL_EVENTS: Omit<TCCEvent, 'id'>[] = [
     title: 'Little Lights Kids Summer Fun Day',
     date: '2026-08-29',
     time: '11:00 AM - 03:00 PM',
-    location: 'Outdoor Lawn & Kids Zone',
     category: 'Youth & Kids',
     description: 'Water slides, bouncy castles, games, and Bible adventure stories for all children!',
     color: '#059669',
@@ -130,7 +121,6 @@ export const DEFAULT_INITIAL_EVENTS: Omit<TCCEvent, 'id'>[] = [
     title: 'TCC Transformation Conference 2026',
     date: '2026-09-11',
     time: '06:00 PM - 09:00 PM',
-    location: 'TCC Main Sanctuary',
     category: 'Special Event',
     description: 'Annual 3-day spiritual empowerment conference featuring guest speakers and worship teams.',
     color: '#7c3aed',
@@ -502,14 +492,13 @@ export const EventCalendar: React.FC = () => {
   // Export / Add to Google Calendar helper
   const getGoogleCalendarUrl = (event: TCCEvent) => {
     const title = encodeURIComponent(event.title + (event.isCancelled ? ' (CANCELLED)' : ''));
-    const details = encodeURIComponent(`${event.description || ''}\n\nLocation: ${event.location || 'Transformation City Church'}`);
-    const location = encodeURIComponent(event.location || 'Transformation City Church');
+    const details = encodeURIComponent(event.description || '');
     
     // Format YYYYMMDD
     const cleanDate = event.date ? event.date.replace(/-/g, '') : '';
     const dates = `${cleanDate}/${cleanDate}`;
 
-    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}&location=${location}&dates=${dates}`;
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}&dates=${dates}`;
   };
 
   return (
@@ -780,12 +769,6 @@ export const EventCalendar: React.FC = () => {
                             <span>{ev.time}</span>
                           </div>
                         )}
-                        {ev.location && (
-                          <div className="flex items-center space-x-1">
-                            <MapPin className="w-3.5 h-3.5 text-gray-400" />
-                            <span>{ev.location}</span>
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -935,13 +918,6 @@ export const EventCalendar: React.FC = () => {
                 <div className="flex items-center space-x-3 text-gray-600 font-medium">
                   <Clock className="w-5 h-5 text-gray-400" />
                   <span>{selectedEvent.time}</span>
-                </div>
-              )}
-
-              {selectedEvent.location && (
-                <div className="flex items-center space-x-3 text-gray-600 font-medium">
-                  <MapPin className="w-5 h-5 text-gray-400" />
-                  <span>{selectedEvent.location}</span>
                 </div>
               )}
             </div>
