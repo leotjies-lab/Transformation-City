@@ -2,7 +2,14 @@
 import React, { useState } from 'react';
 import { collection, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { CheckCircle, Loader2 } from 'lucide-react';
+import { CheckCircle, Loader2, ChevronDown, Check, X, Sparkles } from 'lucide-react';
+
+const INTERESTED_OPTIONS = [
+  'Join Our Family',
+  'Impact Life Journey',
+  'Connect Group',
+  'Transformation Life'
+];
 
 const NextSteps: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -10,7 +17,8 @@ const NextSteps: React.FC = () => {
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [interestedIn, setInterestedIn] = useState('Join Our Family');
+  const [interestedIn, setInterestedIn] = useState<string[]>(['Join Our Family']);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [message, setMessage] = useState('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -24,10 +32,25 @@ const NextSteps: React.FC = () => {
     { id: 4, title: 'Live a Transformation Life', desc: "Reflecting God's glory in your world." },
   ];
 
+  const toggleOption = (opt: string) => {
+    if (interestedIn.includes(opt)) {
+      if (interestedIn.length > 1) {
+        setInterestedIn(interestedIn.filter((item) => item !== opt));
+      }
+    } else {
+      setInterestedIn([...interestedIn, opt]);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!firstName.trim() || !lastName.trim() || !email.trim()) {
       setErrorMsg('Please fill in your first name, last name, and email.');
+      return;
+    }
+
+    if (interestedIn.length === 0) {
+      setErrorMsg('Please select at least one option from "Interested In".');
       return;
     }
 
@@ -36,19 +59,62 @@ const NextSteps: React.FC = () => {
 
     try {
       const trimmedMessage = message.trim();
-      await addDoc(collection(db, 'submissions'), {
+      const interestedInStr = interestedIn.join(', ');
+
+      const submissionPayload = {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         email: email.trim().toLowerCase(),
         phone: phone.trim(),
-        interestedIn,
+        interestedIn: interestedInStr,
         message: trimmedMessage,
         userMessage: trimmedMessage,
         comments: trimmedMessage,
         request: trimmedMessage,
         status: 'new',
         createdAt: new Date().toISOString(),
-      });
+      };
+
+      // 1. Save to general submissions collection
+      await addDoc(collection(db, 'submissions'), submissionPayload);
+
+      // 2. Save to custom_submissions collection with destination email leonandalouw@outlook.com
+      const customPayload = {
+        formId: 'start_the_journey',
+        formTitle: 'Start The Journey - Next Steps',
+        ownerEmail: 'leonandalouw@outlook.com',
+        destination: 'save_and_email',
+        answers: {
+          'First Name': firstName.trim(),
+          'Last Name': lastName.trim(),
+          'Email Address': email.trim().toLowerCase(),
+          'Phone Number': phone.trim(),
+          'Interested In': interestedInStr,
+          'Message / Notes': trimmedMessage || 'None'
+        },
+        status: 'new',
+        createdAt: new Date().toISOString()
+      };
+
+      await addDoc(collection(db, 'custom_submissions'), customPayload);
+
+      // 3. Dispatch to backend API to email form administrator (leonandalouw@outlook.com)
+      try {
+        await fetch('/api/submit-form', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            formId: 'start_the_journey',
+            formTitle: 'Start The Journey - Next Steps',
+            ownerEmail: 'leonandalouw@outlook.com',
+            destination: 'save_and_email',
+            answers: customPayload.answers,
+            createdAt: customPayload.createdAt,
+          }),
+        });
+      } catch (apiErr) {
+        console.warn('Backend email dispatch warning:', apiErr);
+      }
 
       setIsSubmitting(false);
       setIsSubmitted(true);
@@ -64,7 +130,8 @@ const NextSteps: React.FC = () => {
     setLastName('');
     setEmail('');
     setPhone('');
-    setInterestedIn('Join Our Family');
+    setInterestedIn(['Join Our Family']);
+    setIsDropdownOpen(false);
     setMessage('');
     setIsSubmitted(false);
     setErrorMsg('');
@@ -117,7 +184,7 @@ const NextSteps: React.FC = () => {
                 onClick={() => setIsModalOpen(true)}
                 className="w-full bg-white text-[#a52424] py-3.5 px-6 rounded-2xl font-black text-base md:text-lg hover:bg-gray-100 transition-all transform hover:scale-[1.01] shadow-lg uppercase tracking-wider relative z-10"
               >
-                I'm New Here
+                Join us on the journey
               </button>
             </div>
             <div className="absolute -bottom-0 -right-0 w-full h-full border-2 border-[#a52424] rounded-3xl opacity-20 pointer-events-none"></div>
@@ -174,7 +241,7 @@ const NextSteps: React.FC = () => {
                   <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
                       <div>
-                        <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1.5 uppercase tracking-wide">
+                        <label className="block text-xs sm:text-sm font-bold text-gray-800 dark:text-gray-900 mb-1.5 uppercase tracking-wide">
                           First Name <span className="text-red-500">*</span>
                         </label>
                         <input 
@@ -182,12 +249,12 @@ const NextSteps: React.FC = () => {
                           required
                           value={firstName}
                           onChange={(e) => setFirstName(e.target.value)}
-                          className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all text-sm sm:text-base" 
+                          className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-100 border border-gray-200 dark:border-gray-300 rounded-2xl text-gray-900 dark:text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-[#a52424] focus:bg-white focus:border-transparent outline-none transition-all text-sm sm:text-base font-semibold shadow-sm" 
                           placeholder="John" 
                         />
                       </div>
                       <div>
-                        <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1.5 uppercase tracking-wide">
+                        <label className="block text-xs sm:text-sm font-bold text-gray-800 dark:text-gray-900 mb-1.5 uppercase tracking-wide">
                           Last Name <span className="text-red-500">*</span>
                         </label>
                         <input 
@@ -195,7 +262,7 @@ const NextSteps: React.FC = () => {
                           required
                           value={lastName}
                           onChange={(e) => setLastName(e.target.value)}
-                          className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all text-sm sm:text-base" 
+                          className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-100 border border-gray-200 dark:border-gray-300 rounded-2xl text-gray-900 dark:text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-[#a52424] focus:bg-white focus:border-transparent outline-none transition-all text-sm sm:text-base font-semibold shadow-sm" 
                           placeholder="Doe" 
                         />
                       </div>
@@ -203,7 +270,7 @@ const NextSteps: React.FC = () => {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
                       <div>
-                        <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1.5 uppercase tracking-wide">
+                        <label className="block text-xs sm:text-sm font-bold text-gray-800 dark:text-gray-900 mb-1.5 uppercase tracking-wide">
                           Email Address <span className="text-red-500">*</span>
                         </label>
                         <input 
@@ -211,45 +278,114 @@ const NextSteps: React.FC = () => {
                           required
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
-                          className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all text-sm sm:text-base" 
+                          className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-100 border border-gray-200 dark:border-gray-300 rounded-2xl text-gray-900 dark:text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-[#a52424] focus:bg-white focus:border-transparent outline-none transition-all text-sm sm:text-base font-semibold shadow-sm" 
                           placeholder="john@example.com" 
                         />
                       </div>
                       <div>
-                        <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1.5 uppercase tracking-wide">
+                        <label className="block text-xs sm:text-sm font-bold text-gray-800 dark:text-gray-900 mb-1.5 uppercase tracking-wide">
                           Phone Number
                         </label>
                         <input 
                           type="tel" 
                           value={phone}
                           onChange={(e) => setPhone(e.target.value)}
-                          className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all text-sm sm:text-base" 
+                          className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-100 border border-gray-200 dark:border-gray-300 rounded-2xl text-gray-900 dark:text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-[#a52424] focus:bg-white focus:border-transparent outline-none transition-all text-sm sm:text-base font-semibold shadow-sm" 
                           placeholder="+27 82 123 4567" 
                         />
                       </div>
                     </div>
 
-                    <div>
-                      <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Interested In</label>
-                      <select 
-                        value={interestedIn}
-                        onChange={(e) => setInterestedIn(e.target.value)}
-                        className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all text-sm sm:text-base appearance-none"
+                    {/* Interested In Multi-Select Dropdown Menu */}
+                    <div className="relative">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-xs sm:text-sm font-bold text-gray-800 dark:text-gray-900 uppercase tracking-wide">
+                          Interested In <span className="text-red-500">*</span>
+                        </label>
+                        <span className="text-[11px] font-bold text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full flex items-center space-x-1">
+                          <ChevronDown className="w-3 h-3 text-red-600" />
+                          <span>Dropdown Menu • Multiple Selections</span>
+                        </span>
+                      </div>
+
+                      {/* Dropdown Header Trigger Box */}
+                      <div
+                        onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                        className="w-full min-h-[50px] px-4 py-2.5 bg-gray-50 dark:bg-gray-100 border border-gray-200 dark:border-gray-300 rounded-2xl text-gray-900 dark:text-gray-900 transition-all cursor-pointer flex items-center justify-between shadow-sm hover:border-[#a52424]"
                       >
-                        <option value="Join Our Family">Join Our Family</option>
-                        <option value="Impact Life Journey">Impact Life Journey</option>
-                        <option value="Connect Groups">Connect Groups</option>
-                        <option value="Service Opportunities">Service Opportunities</option>
-                      </select>
+                        <div className="flex flex-wrap gap-1.5 items-center pr-2">
+                          {interestedIn.length === 0 ? (
+                            <span className="text-gray-400 text-sm font-medium">Select steps from dropdown...</span>
+                          ) : (
+                            interestedIn.map((item) => (
+                              <span
+                                key={item}
+                                className="inline-flex items-center space-x-1.5 bg-red-100 text-[#a52424] font-bold text-xs px-2.5 py-1 rounded-xl border border-red-200"
+                              >
+                                <span>{item}</span>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleOption(item);
+                                  }}
+                                  className="hover:text-red-900 p-0.5 rounded-full"
+                                  title="Remove selection"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </span>
+                            ))
+                          )}
+                        </div>
+                        <div className="flex items-center space-x-1.5 text-gray-600 flex-shrink-0 ml-2">
+                          <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Select</span>
+                          <ChevronDown className={`w-5 h-5 text-gray-700 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180 text-[#a52424]' : ''}`} />
+                        </div>
+                      </div>
+
+                      {/* Dropdown Options List */}
+                      {isDropdownOpen && (
+                        <div className="absolute left-0 right-0 mt-2 bg-white border border-gray-200 rounded-2xl shadow-2xl z-50 p-2 space-y-1 max-h-64 overflow-y-auto">
+                          <div className="px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-gray-500 border-b border-gray-100 mb-1 flex justify-between items-center">
+                            <span>Dropdown Menu Options</span>
+                            <span className="text-red-700 font-bold">{interestedIn.length} Selected</span>
+                          </div>
+                          {INTERESTED_OPTIONS.map((option) => {
+                            const isSelected = interestedIn.includes(option);
+                            return (
+                              <div
+                                key={option}
+                                onClick={() => toggleOption(option)}
+                                className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-bold cursor-pointer transition-all ${
+                                  isSelected
+                                    ? 'bg-red-50 text-[#a52424] border border-red-200 shadow-sm'
+                                    : 'text-gray-900 hover:bg-gray-100'
+                                }`}
+                              >
+                                <span className="flex items-center space-x-3">
+                                  <span className={`w-4 h-4 rounded flex items-center justify-center border transition-colors ${
+                                    isSelected ? 'bg-[#a52424] border-[#a52424] text-white' : 'border-gray-400 bg-white'
+                                  }`}>
+                                    {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                                  </span>
+                                  <span className="text-gray-900">{option}</span>
+                                </span>
+                                {isSelected && <span className="text-xs font-black text-[#a52424]">Selected</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
 
                     <div>
-                      <label className="block text-xs sm:text-sm font-bold text-gray-700 mb-1.5 uppercase tracking-wide">Any Message?</label>
+                      <label className="block text-xs sm:text-sm font-bold text-gray-800 dark:text-gray-900 mb-1.5 uppercase tracking-wide">Any Message?</label>
                       <textarea 
                         rows={3} 
                         value={message}
                         onChange={(e) => setMessage(e.target.value)}
-                        className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-[#a52424] focus:border-transparent outline-none transition-all text-sm sm:text-base" 
+                        className="w-full px-4 py-3 bg-gray-50 dark:bg-gray-100 border border-gray-200 dark:border-gray-300 rounded-2xl text-gray-900 dark:text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-[#a52424] focus:bg-white focus:border-transparent outline-none transition-all text-sm sm:text-base font-medium shadow-sm" 
                         placeholder="I'd love to know more about..."
                       ></textarea>
                     </div>

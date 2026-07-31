@@ -46,6 +46,37 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["title", "date"]
+    },
+    "custom_forms": {
+      "title": "Custom Forms",
+      "description": "Admin created church forms with destination options",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "ownerEmail": { "type": "string" },
+        "destination": { "type": "string", "enum": ["save", "email", "save_and_email"] },
+        "fields": { "type": "array" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "ownerEmail", "destination", "fields", "active", "createdAt"]
+    },
+    "custom_submissions": {
+      "title": "Custom Form Submissions",
+      "description": "Submissions collected for custom church forms",
+      "type": "object",
+      "properties": {
+        "formId": { "type": "string" },
+        "formTitle": { "type": "string" },
+        "ownerEmail": { "type": "string" },
+        "destination": { "type": "string" },
+        "answers": { "type": "object" },
+        "status": { "type": "string", "enum": ["new", "contacted", "followed-up", "archived"] },
+        "adminNotes": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["formId", "formTitle", "answers", "status", "createdAt"]
     }
   },
   "firestore": {
@@ -60,6 +91,14 @@
     "/events/{eventId}": {
       "schema": { "$ref": "#/entities/events" },
       "description": "Calendar events for TCC"
+    },
+    "/custom_forms/{formId}": {
+      "schema": { "$ref": "#/entities/custom_forms" },
+      "description": "Custom church forms"
+    },
+    "/custom_submissions/{submissionId}": {
+      "schema": { "$ref": "#/entities/custom_submissions" },
+      "description": "Submissions for custom church forms"
     }
   }
 }

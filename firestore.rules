@@ -19,5 +19,17 @@ service cloud.firestore {
       allow read: if true;
       allow create, update, delete: if true;
     }
+
+    // Custom Forms - Public read for active forms, full access for admin management
+    match /custom_forms/{formId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
+
+    // Custom Form Submissions - Public create, read/update/delete for admin management
+    match /custom_submissions/{submissionId} {
+      allow create: if request.resource.data.formId is string;
+      allow read, update, delete: if true;
+    }
   }
 }

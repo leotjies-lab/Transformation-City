@@ -20,6 +20,7 @@ import {
 import { auth, db } from '../firebase';
 import { FormSubmission, SubmissionStatus, AdminMember, TCCEvent } from '../types';
 import { DEFAULT_INITIAL_EVENTS } from './EventCalendar';
+import FormManager from './FormManager';
 import { 
   ShieldCheck, 
   LogOut, 
@@ -53,7 +54,8 @@ import {
   Repeat,
   Ban,
   CalendarCheck,
-  Check
+  Check,
+  FileText
 } from 'lucide-react';
 
 interface AdminPortalProps {
@@ -81,7 +83,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
   const [submittingAuth, setSubmittingAuth] = useState(false);
 
   // Active Navigation Tab
-  const [activeTab, setActiveTab] = useState<'submissions' | 'admins' | 'events'>('events');
+  const [activeTab, setActiveTab] = useState<'submissions' | 'admins' | 'events' | 'custom_forms'>('events');
 
   // Events state
   const [eventsList, setEventsList] = useState<TCCEvent[]>([]);
@@ -1081,6 +1083,18 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
           </button>
 
           <button
+            onClick={() => setActiveTab('custom_forms')}
+            className={`px-6 py-3.5 font-black text-xs sm:text-sm uppercase tracking-wider rounded-t-2xl transition-all flex items-center space-x-2.5 ${
+              activeTab === 'custom_forms'
+                ? 'bg-gray-900 text-white border-t-2 border-[#a52424] shadow-lg'
+                : 'text-gray-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <FileText className="w-4 h-4 text-blue-400" />
+            <span>Form Builder & Destinations</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('admins')}
             className={`px-6 py-3.5 font-black text-xs sm:text-sm uppercase tracking-wider rounded-t-2xl transition-all flex items-center space-x-2.5 ${
               activeTab === 'admins'
@@ -1650,6 +1664,11 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
               )}
             </div>
           </div>
+        ) : activeTab === 'custom_forms' ? (
+          <FormManager 
+            adminEmail={currentUser?.email || adminSession?.email || 'leonandalouw@outlook.com'} 
+            onNavigate={onNavigate} 
+          />
         ) : (
           <>
             {/* Metric Cards */}
