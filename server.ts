@@ -8,43 +8,50 @@ const PORT = 3000;
 
 app.use(express.json());
 
-// Transporter configuration helper
-async function createTransporter() {
-  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-    return nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT) || 587,
-      secure: Number(process.env.SMTP_PORT) === 465,
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-  } else {
-    // Generate test Ethereal SMTP service for development/testing if no custom SMTP is provided
-    try {
-      const testAccount = await nodemailer.createTestAccount();
-      return nodemailer.createTransport({
-        host: "smtp.ethereal.email",
-        port: 587,
-        secure: false,
-        auth: {
-          user: testAccount.user,
-          pass: testAccount.pass,
-        },
-      });
-    } catch (err) {
-      console.warn("Could not create Ethereal test account, using fallback transporter:", err);
-      return nodemailer.createTransport({
-        jsonTransport: true,
-      });
-    }
-  }
+// Transporter configuration helper for Hostinger SMTP
+function getSmtpCredentials() {
+  return {
+    host: process.env.SMTP_HOST || "smtp.hostinger.com",
+    port: Number(process.env.SMTP_PORT) || 465,
+    user: process.env.SMTP_USER || "admin@transformationcitychurch.org",
+    pass: process.env.SMTP_PASS || "jxaiET4!",
+    from: process.env.SMTP_FROM || `"Transformation City Church" <admin@transformationcitychurch.org>`,
+  };
 }
 
-// API Health Check
+async function createTransporter(customPort?: number) {
+  const creds = getSmtpCredentials();
+  const port = customPort || creds.port;
+  const isSecure = port === 465;
+
+  return nodemailer.createTransport({
+    host: creds.host,
+    port: port,
+    secure: isSecure, // true for 465, false for 587
+    auth: {
+      user: creds.user,
+      pass: creds.pass,
+    },
+    tls: {
+      rejectUnauthorized: false, // Prevents certificate verification failures on custom domains
+    },
+  });
+}
+
+// API Health & SMTP Status Check
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+app.get("/api/smtp-status", (req, res) => {
+  const creds = getSmtpCredentials();
+  res.json({
+    configured: true,
+    host: creds.host,
+    user: creds.user,
+    from: creds.from,
+    recipients: ["admin@transformationcitychurch.org", "leonandalouw@outlook.com"]
+  });
 });
 
 // Endpoint to receive form submission and dispatch email to administrator
@@ -52,7 +59,15 @@ app.post("/api/submit-form", async (req, res) => {
   try {
     const { formTitle, ownerEmail, answers, destination, createdAt, formId } = req.body;
 
-    const recipient = ownerEmail || "leonandalouw@outlook.com";
+    // Collect all admin recipients (ensuring admin@transformationcitychurch.org is included)
+    const rawRecipients = [
+      "admin@transformationcitychurch.org",
+      ownerEmail,
+      "leonandalouw@outlook.com"
+    ];
+    const recipientsList = Array.from(new Set(rawRecipients.filter(Boolean)));
+    const recipientString = recipientsList.join(", ");
+
     const title = formTitle || "Transformation City Church Form";
     const submittedTime = createdAt ? new Date(createdAt).toLocaleString() : new Date().toLocaleString();
 
@@ -110,8 +125,8 @@ app.post("/api/submit-form", async (req, res) => {
               </tbody>
             </table>
             <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; text-align: center;">
-              Sent automatically to form administrator: <strong>${recipient}</strong><br/>
-              Transformation City Church Admin System
+              Target Admin Recipients: <strong>${recipientString}</strong><br/>
+              Transformation City Church Automated Form Notification
             </div>
           </div>
         </div>
@@ -122,7 +137,7 @@ app.post("/api/submit-form", async (req, res) => {
     const plainTextBody = `
 NEW FORM SUBMISSION: ${title}
 Submitted at: ${submittedTime}
-Destination: ${recipient}
+Recipients: ${recipientString}
 
 ---------------------------------------------------
 RESPONSES:
@@ -131,31 +146,37 @@ ${fieldsText}
 Transformation City Church Form System
     `;
 
-    const transporter = await createTransporter();
-    const fromAddress = process.env.SMTP_FROM || `"Transformation City Church" <noreply@tccchurch.org>`;
+    const creds = getSmtpCredentials();
+    const fromAddress = creds.from;
 
     const mailOptions = {
       from: fromAddress,
-      to: recipient,
+      to: recipientString,
       subject: emailSubject,
       text: plainTextBody,
       html: htmlBody,
     };
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log(`[Form Dispatch] Sent email for "${title}" to ${recipient}. MessageId:`, info.messageId || "N/A");
-
-    const testUrl = nodemailer.getTestMessageUrl(info);
-    if (testUrl) {
-      console.log(`[Form Dispatch Preview URL]:`, testUrl);
+    let info: any = null;
+    try {
+      // Try primary port (465 SSL)
+      const primaryTransporter = await createTransporter(creds.port);
+      info = await primaryTransporter.sendMail(mailOptions);
+    } catch (primaryErr: any) {
+      console.warn(`[Form Dispatch Warning] Port ${creds.port} failed (${primaryErr.message}). Retrying with STARTTLS on port 587...`);
+      // Fallback to port 587 STARTTLS
+      const fallbackTransporter = await createTransporter(587);
+      info = await fallbackTransporter.sendMail(mailOptions);
     }
+
+    console.log(`[Form Dispatch] Sent email for "${title}" to [${recipientString}]. MessageId:`, info.messageId || "N/A");
 
     return res.status(200).json({
       success: true,
-      message: `Form submitted and email dispatched to ${recipient}`,
-      recipient,
+      message: `Form submitted and email dispatched via Hostinger SMTP to ${recipientString}`,
+      recipients: recipientsList,
+      smtpConfigured: true,
       messageId: info.messageId || null,
-      previewUrl: testUrl || null,
     });
   } catch (err: any) {
     console.error("[Form Submission API Error]:", err);

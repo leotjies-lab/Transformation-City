@@ -185,6 +185,22 @@ export const FormManager: React.FC<FormManagerProps> = ({ adminEmail = 'leonanda
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
 
+  // SMTP Server Config State
+  const [smtpStatus, setSmtpStatus] = useState<{
+    configured: boolean;
+    host: string;
+    user: string;
+    from: string;
+    recipients: string[];
+  } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/smtp-status')
+      .then((res) => res.json())
+      .then((data) => setSmtpStatus(data))
+      .catch((err) => console.warn('Could not fetch SMTP status:', err));
+  }, []);
+
   const registerStartJourneyForm = async () => {
     const startJourneyTemplate = PRESET_TEMPLATES[0].form; // Start The Journey
     const formData = {
@@ -565,6 +581,45 @@ export const FormManager: React.FC<FormManagerProps> = ({ adminEmail = 'leonanda
             <Inbox className="w-4 h-4 text-amber-400" />
             <span>Submissions Inbox ({customSubmissions.length})</span>
           </button>
+        </div>
+      </div>
+
+      {/* SMTP Email Backend Status Banner */}
+      <div className="bg-gradient-to-r from-gray-900 via-gray-950 to-gray-900 border border-white/10 rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-xl">
+        <div className="flex items-start space-x-3">
+          <div className={`p-2.5 rounded-xl mt-0.5 ${smtpStatus?.configured ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'}`}>
+            <Send className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="flex items-center space-x-2">
+              <h4 className="text-sm font-black text-white uppercase tracking-wider">
+                Backend Email Dispatch Engine
+              </h4>
+              <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                smtpStatus?.configured ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+              }`}>
+                {smtpStatus?.configured ? 'SMTP Active' : 'Sandbox Test Mode'}
+              </span>
+            </div>
+            <p className="text-xs text-gray-400 mt-1 max-w-2xl leading-relaxed">
+              Target Admin Recipient: <span className="text-white font-bold">admin@transformationcitychurch.org</span> & <span className="text-white font-bold">leonandalouw@outlook.com</span>.
+              {!smtpStatus?.configured && (
+                <span className="block mt-1 text-amber-300/90">
+                  ⚠️ Note: Operating in Ethereal Sandbox mode. Submissions save to this Admin Inbox and generate backend test emails. To send to external inboxes, populate <code className="bg-black/50 px-1 py-0.5 rounded text-amber-200">SMTP_HOST</code>, <code className="bg-black/50 px-1 py-0.5 rounded text-amber-200">SMTP_USER</code>, and <code className="bg-black/50 px-1 py-0.5 rounded text-amber-200">SMTP_PASS</code> in <code className="bg-black/50 px-1 py-0.5 rounded text-amber-200">.env</code>.
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
+          <a
+            href="#submissions"
+            onClick={() => setSubTab('submissions')}
+            className="px-3.5 py-2 bg-white/5 hover:bg-white/10 text-xs font-bold text-gray-300 hover:text-white rounded-xl transition-all border border-white/10 text-center"
+          >
+            View Submissions Inbox
+          </a>
         </div>
       </div>
 
