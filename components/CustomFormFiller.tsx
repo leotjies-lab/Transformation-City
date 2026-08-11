@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CustomForm, CustomFormSubmission, FormField } from '../types';
 import { 
@@ -121,6 +121,8 @@ export const CustomFormFiller: React.FC<CustomFormFillerProps> = ({
 
     setIsSubmitting(true);
 
+    const initialEmailStatus = form.destination === 'save' ? 'db_only' : 'pending';
+
     const submissionData: CustomFormSubmission = {
       formId: form.id || 'local',
       formTitle: form.title || 'Untitled Form',
@@ -128,6 +130,7 @@ export const CustomFormFiller: React.FC<CustomFormFillerProps> = ({
       destination: form.destination || 'save',
       answers: answers || {},
       status: 'new',
+      emailDeliveryStatus: initialEmailStatus,
       createdAt: new Date().toISOString(),
     };
 
@@ -137,11 +140,13 @@ export const CustomFormFiller: React.FC<CustomFormFillerProps> = ({
     setMailtoUrl(url);
 
     try {
+      let createdDocId: string | null = null;
       // 1. Save to Database if destination includes 'save' or 'save_and_email'
       if (form.destination === 'save' || form.destination === 'save_and_email' || !form.destination) {
         try {
           const docRef = await addDoc(collection(db, 'custom_submissions'), sanitizedSubmission);
           submissionData.id = docRef.id;
+          createdDocId = docRef.id;
         } catch (dbErr) {
           console.warn('Firestore write warning (falling back to local state):', dbErr);
         }
@@ -159,22 +164,47 @@ export const CustomFormFiller: React.FC<CustomFormFillerProps> = ({
         }
       });
 
-      try {
-        await fetch('/api/submit-form', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            formId: form.id,
-            formTitle: form.title || 'Form Submission',
-            ownerEmail: form.ownerEmail || 'leonandalouw@outlook.com',
-            destination: form.destination,
-            answers: readableAnswers,
-            createdAt: submissionData.createdAt,
-          }),
-        });
-        setEmailTriggered(true);
-      } catch (apiErr) {
-        console.warn('Backend email dispatch error:', apiErr);
+      if (form.destination === 'email' || form.destination === 'save_and_email') {
+        try {
+          const res = await fetch('/api/submit-form', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              formId: form.id,
+              formTitle: form.title || 'Form Submission',
+              ownerEmail: form.ownerEmail || 'leonandalouw@outlook.com',
+              destination: form.destination,
+              answers: readableAnswers,
+              createdAt: submissionData.createdAt,
+            }),
+          });
+          const resData = await res.json();
+          if (res.ok && resData.success) {
+            setEmailTriggered(true);
+            if (createdDocId) {
+              await updateDoc(doc(db, 'custom_submissions', createdDocId), {
+                emailDeliveryStatus: 'sent',
+                emailDispatchedAt: new Date().toISOString(),
+                emailMessageId: resData.messageId || null
+              }).catch(() => {});
+            }
+          } else {
+            if (createdDocId) {
+              await updateDoc(doc(db, 'custom_submissions', createdDocId), {
+                emailDeliveryStatus: 'failed',
+                emailError: resData.error || 'Email dispatch endpoint returned failure'
+              }).catch(() => {});
+            }
+          }
+        } catch (apiErr: any) {
+          console.warn('Backend email dispatch error:', apiErr);
+          if (createdDocId) {
+            await updateDoc(doc(db, 'custom_submissions', createdDocId), {
+              emailDeliveryStatus: 'failed',
+              emailError: apiErr.message || 'Network dispatch error'
+            }).catch(() => {});
+          }
+        }
       }
 
       setSubmitted(true);

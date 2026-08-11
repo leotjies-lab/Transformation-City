@@ -23,6 +23,10 @@ import {
   Check, 
   Download, 
   Mail, 
+  MailCheck,
+  MailWarning,
+  AlertTriangle,
+  RefreshCw,
   Database, 
   Sparkles, 
   ArrowUp, 
@@ -170,6 +174,74 @@ export const FormManager: React.FC<FormManagerProps> = ({ adminEmail = 'leonanda
   // Custom Submissions State
   const [customSubmissions, setCustomSubmissions] = useState<CustomFormSubmission[]>([]);
   const [selectedSubmission, setSelectedSubmission] = useState<CustomFormSubmission | null>(null);
+  const [emailDeliveryFilter, setEmailDeliveryFilter] = useState<'all' | 'sent' | 'submitted_only' | 'failed' | 'db_only'>('all');
+  const [isResendingEmail, setIsResendingEmail] = useState(false);
+  const [resendStatusMsg, setResendStatusMsg] = useState<string | null>(null);
+
+  const getNormalizedEmailStatus = (sub: CustomFormSubmission): 'sent' | 'submitted_only' | 'failed' | 'db_only' => {
+    if (sub.emailDeliveryStatus === 'sent') return 'sent';
+    if (sub.emailDeliveryStatus === 'failed') return 'failed';
+    if (sub.emailDeliveryStatus === 'db_only' || sub.destination === 'save') return 'db_only';
+    return 'submitted_only';
+  };
+
+  const handleResendSubmissionEmail = async (sub: CustomFormSubmission) => {
+    setIsResendingEmail(true);
+    setResendStatusMsg(null);
+
+    const readableAnswers: Record<string, any> = {};
+    Object.entries(sub.answers || {}).forEach(([k, v]) => {
+      readableAnswers[k] = Array.isArray(v) ? v.join(', ') : String(v || '');
+    });
+
+    try {
+      const res = await fetch('/api/submit-form', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          formId: sub.formId,
+          formTitle: sub.formTitle,
+          ownerEmail: sub.ownerEmail || 'leonandalouw@outlook.com',
+          destination: sub.destination || 'save_and_email',
+          answers: readableAnswers,
+          createdAt: sub.createdAt,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setResendStatusMsg('Email successfully dispatched via SMTP to admin inbox!');
+        if (sub.id) {
+          await updateDoc(doc(db, 'custom_submissions', sub.id), {
+            emailDeliveryStatus: 'sent',
+            emailDispatchedAt: new Date().toISOString(),
+            emailMessageId: data.messageId || null
+          }).catch(() => {});
+        }
+        setSelectedSubmission((prev) => prev ? {
+          ...prev,
+          emailDeliveryStatus: 'sent',
+          emailDispatchedAt: new Date().toISOString()
+        } : null);
+        setCustomSubmissions((prev) => prev.map((item) => item.id === sub.id ? {
+          ...item,
+          emailDeliveryStatus: 'sent',
+          emailDispatchedAt: new Date().toISOString()
+        } : item));
+      } else {
+        setResendStatusMsg(`Dispatch failed: ${data.error || 'SMTP delivery issue'}`);
+        if (sub.id) {
+          await updateDoc(doc(db, 'custom_submissions', sub.id), {
+            emailDeliveryStatus: 'failed',
+            emailError: data.error || 'SMTP delivery issue'
+          }).catch(() => {});
+        }
+      }
+    } catch (err: any) {
+      setResendStatusMsg(`Network error: ${err.message}`);
+    } finally {
+      setIsResendingEmail(false);
+    }
+  };
 
   // Form Builder State
   const [editingFormId, setEditingFormId] = useState<string | null>(null);
@@ -505,7 +577,11 @@ export const FormManager: React.FC<FormManagerProps> = ({ adminEmail = 'leonanda
     const matchesForm = selectedFormFilter === 'all' || s.formId === selectedFormFilter;
     const answersText = JSON.stringify(s.answers || '').toLowerCase();
     const matchesSearch = !searchTerm || s.formTitle.toLowerCase().includes(searchTerm.toLowerCase()) || answersText.includes(searchTerm.toLowerCase());
-    return matchesForm && matchesSearch;
+    
+    const emailStatus = getNormalizedEmailStatus(s);
+    const matchesEmail = emailDeliveryFilter === 'all' || emailStatus === emailDeliveryFilter;
+
+    return matchesForm && matchesSearch && matchesEmail;
   });
 
   return (
@@ -1143,7 +1219,7 @@ export const FormManager: React.FC<FormManagerProps> = ({ adminEmail = 'leonanda
             <div>
               <h3 className="text-xl font-black text-white uppercase tracking-tight">Custom Form Submissions</h3>
               <p className="text-xs text-gray-400 mt-1">
-                Filter responses by form, inspect submitted answers, manage statuses, and export to CSV.
+                Filter responses by form and email status, inspect submitted answers, manage workflow statuses, and export to CSV.
               </p>
             </div>
 
@@ -1160,6 +1236,19 @@ export const FormManager: React.FC<FormManagerProps> = ({ adminEmail = 'leonanda
                     {f.title}
                   </option>
                 ))}
+              </select>
+
+              {/* Delivery Status Filter */}
+              <select
+                value={emailDeliveryFilter}
+                onChange={(e) => setEmailDeliveryFilter(e.target.value as any)}
+                className="bg-gray-950 border border-white/10 text-white rounded-2xl px-4 py-2.5 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-[#a52424]"
+              >
+                <option value="all">All Delivery Statuses</option>
+                <option value="sent">✉️ Email Sent (Dispatched)</option>
+                <option value="submitted_only">⚠️ Submitted Only (Email Pending/Failed)</option>
+                <option value="failed">❌ Email Failed</option>
+                <option value="db_only">💾 Database Only</option>
               </select>
 
               {/* Search input */}
@@ -1192,73 +1281,116 @@ export const FormManager: React.FC<FormManagerProps> = ({ adminEmail = 'leonanda
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {displayedSubmissions.map((sub) => (
-                <div
-                  key={sub.id}
-                  className="bg-gray-950 border border-white/10 hover:border-white/20 rounded-2xl p-5 space-y-4 transition-all shadow-md flex flex-col justify-between"
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold uppercase tracking-wider bg-red-500/10 text-red-400 px-2.5 py-0.5 rounded-full border border-red-500/20">
-                        {sub.formTitle}
-                      </span>
-                      <span className="text-[10px] text-gray-400 font-mono">
-                        {new Date(sub.createdAt).toLocaleDateString()}
-                      </span>
-                    </div>
+              {displayedSubmissions.map((sub) => {
+                const normEmailStatus = getNormalizedEmailStatus(sub);
+                return (
+                  <div
+                    key={sub.id}
+                    className="bg-gray-950 border border-white/10 hover:border-white/20 rounded-2xl p-5 space-y-4 transition-all shadow-md flex flex-col justify-between"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-[10px] font-bold uppercase tracking-wider bg-red-500/10 text-red-400 px-2.5 py-0.5 rounded-full border border-red-500/20">
+                          {sub.formTitle}
+                        </span>
+                        <span className="text-[10px] text-gray-400 font-mono">
+                          {new Date(sub.createdAt).toLocaleDateString()}
+                        </span>
+                      </div>
 
-                    {/* Answers Summary */}
-                    <div className="space-y-1.5 text-xs text-gray-300 bg-gray-900/60 p-3.5 rounded-xl border border-white/5">
-                      {Object.entries(sub.answers || {}).slice(0, 3).map(([key, val], idx) => (
-                        <div key={idx} className="flex justify-between items-start">
-                          <span className="font-medium text-gray-400 capitalize max-w-[40%] truncate">{key}:</span>
-                          <span className="font-bold text-white text-right max-w-[55%] truncate">
-                            {Array.isArray(val) ? val.join(', ') : String(val)}
+                      {/* Status Badges: DB Saved vs Email Status */}
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
+                          <Database className="w-3 h-3" />
+                          <span>Saved in DB</span>
+                        </span>
+
+                        {normEmailStatus === 'sent' && (
+                          <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded-full border border-emerald-500/30">
+                            <MailCheck className="w-3 h-3 text-emerald-400" />
+                            <span>Email Sent</span>
                           </span>
-                        </div>
-                      ))}
-                      {Object.keys(sub.answers || {}).length > 3 && (
-                        <p className="text-[10px] text-gray-500 italic pt-1 text-right">
-                          +{Object.keys(sub.answers).length - 3} more answers...
-                        </p>
-                      )}
+                        )}
+
+                        {normEmailStatus === 'submitted_only' && (
+                          <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 px-2.5 py-0.5 rounded-full border border-amber-500/30">
+                            <MailWarning className="w-3 h-3 text-amber-400" />
+                            <span>Submitted Only (Email Pending)</span>
+                          </span>
+                        )}
+
+                        {normEmailStatus === 'failed' && (
+                          <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider bg-red-500/20 text-red-300 px-2.5 py-0.5 rounded-full border border-red-500/30">
+                            <AlertTriangle className="w-3 h-3 text-red-400" />
+                            <span>Email Failed</span>
+                          </span>
+                        )}
+
+                        {normEmailStatus === 'db_only' && (
+                          <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider bg-blue-500/10 text-blue-400 px-2.5 py-0.5 rounded-full border border-blue-500/20">
+                            <Database className="w-3 h-3" />
+                            <span>DB Only Mode</span>
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Answers Summary */}
+                      <div className="space-y-1.5 text-xs text-gray-300 bg-gray-900/60 p-3.5 rounded-xl border border-white/5">
+                        {Object.entries(sub.answers || {}).slice(0, 3).map(([key, val], idx) => (
+                          <div key={idx} className="flex justify-between items-start">
+                            <span className="font-medium text-gray-400 capitalize max-w-[40%] truncate">{key}:</span>
+                            <span className="font-bold text-white text-right max-w-[55%] truncate">
+                              {Array.isArray(val) ? val.join(', ') : String(val)}
+                            </span>
+                          </div>
+                        ))}
+                        {Object.keys(sub.answers || {}).length > 3 && (
+                          <p className="text-[10px] text-gray-500 italic pt-1 text-right">
+                            +{Object.keys(sub.answers).length - 3} more answers...
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-3 border-t border-white/5 flex items-center justify-between gap-2">
+                      <div className="flex items-center space-x-1.5">
+                        <span
+                          className={`w-2 h-2 rounded-full ${
+                            sub.status === 'new'
+                              ? 'bg-blue-400 animate-pulse'
+                              : sub.status === 'contacted'
+                              ? 'bg-amber-400'
+                              : 'bg-emerald-400'
+                          }`}
+                        />
+                        <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400">
+                          {sub.status}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => {
+                            setSelectedSubmission(sub);
+                            setResendStatusMsg(null);
+                          }}
+                          className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold transition-all flex items-center space-x-1"
+                        >
+                          <Eye className="w-3.5 h-3.5 text-red-400" />
+                          <span>Details</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteSubmission(sub)}
+                          className="p-1.5 text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
+                          title="Delete record"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   </div>
-
-                  <div className="pt-3 border-t border-white/5 flex items-center justify-between gap-2">
-                    <div className="flex items-center space-x-1.5">
-                      <span
-                        className={`w-2 h-2 rounded-full ${
-                          sub.status === 'new'
-                            ? 'bg-blue-400 animate-pulse'
-                            : sub.status === 'contacted'
-                            ? 'bg-amber-400'
-                            : 'bg-emerald-400'
-                        }`}
-                      />
-                      <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400">
-                        {sub.status}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => setSelectedSubmission(sub)}
-                        className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-bold transition-all"
-                      >
-                        View Details
-                      </button>
-                      <button
-                        onClick={() => handleDeleteSubmission(sub)}
-                        className="p-1.5 text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
-                        title="Delete record"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -1280,7 +1412,7 @@ export const FormManager: React.FC<FormManagerProps> = ({ adminEmail = 'leonanda
             <div className="flex items-center justify-between border-b border-white/10 pb-4">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-widest text-red-400 bg-red-500/10 px-2.5 py-0.5 rounded-full border border-red-500/20">
-                  Form Response
+                  Form Response Details
                 </span>
                 <h3 className="text-xl font-black text-white uppercase tracking-tight mt-1">{selectedSubmission.formTitle}</h3>
               </div>
@@ -1292,8 +1424,78 @@ export const FormManager: React.FC<FormManagerProps> = ({ adminEmail = 'leonanda
               </button>
             </div>
 
+            {/* Email Status & Delivery Check Box */}
+            <div className="bg-gray-900 border border-white/10 p-4 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-gray-400 flex items-center space-x-1.5">
+                  <Mail className="w-4 h-4 text-red-400" />
+                  <span>Outgoing Email Status</span>
+                </span>
+
+                {getNormalizedEmailStatus(selectedSubmission) === 'sent' && (
+                  <span className="inline-flex items-center space-x-1 text-[11px] font-bold uppercase bg-emerald-500/20 text-emerald-300 px-3 py-1 rounded-full border border-emerald-500/30">
+                    <MailCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Email Dispatched</span>
+                  </span>
+                )}
+
+                {getNormalizedEmailStatus(selectedSubmission) === 'submitted_only' && (
+                  <span className="inline-flex items-center space-x-1 text-[11px] font-bold uppercase bg-amber-500/20 text-amber-300 px-3 py-1 rounded-full border border-amber-500/30">
+                    <MailWarning className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Submitted Only (Not Sent)</span>
+                  </span>
+                )}
+
+                {getNormalizedEmailStatus(selectedSubmission) === 'failed' && (
+                  <span className="inline-flex items-center space-x-1 text-[11px] font-bold uppercase bg-red-500/20 text-red-300 px-3 py-1 rounded-full border border-red-500/30">
+                    <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                    <span>Failed</span>
+                  </span>
+                )}
+
+                {getNormalizedEmailStatus(selectedSubmission) === 'db_only' && (
+                  <span className="inline-flex items-center space-x-1 text-[11px] font-bold uppercase bg-blue-500/10 text-blue-400 px-3 py-1 rounded-full border border-blue-500/20">
+                    <Database className="w-3.5 h-3.5" />
+                    <span>Database Only</span>
+                  </span>
+                )}
+              </div>
+
+              <p className="text-xs text-gray-300 leading-relaxed">
+                {getNormalizedEmailStatus(selectedSubmission) === 'sent' 
+                  ? `An email notification was sent to ${selectedSubmission.ownerEmail || 'admin@transformationcitychurch.org'}${selectedSubmission.emailDispatchedAt ? ` on ${new Date(selectedSubmission.emailDispatchedAt).toLocaleString()}` : ''}.`
+                  : `This form response was saved to the database. You can trigger an email notification manually using the button below.`}
+              </p>
+
+              {selectedSubmission.emailError && (
+                <div className="bg-red-500/10 border border-red-500/20 p-2.5 rounded-xl text-xs text-red-300">
+                  <strong className="block text-[10px] font-bold uppercase text-red-400">Last Error Details:</strong>
+                  {selectedSubmission.emailError}
+                </div>
+              )}
+
+              {resendStatusMsg && (
+                <div className={`p-2.5 rounded-xl text-xs font-bold ${resendStatusMsg.includes('failed') || resendStatusMsg.includes('error') ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'}`}>
+                  {resendStatusMsg}
+                </div>
+              )}
+
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => handleResendSubmissionEmail(selectedSubmission)}
+                  disabled={isResendingEmail}
+                  className="w-full bg-white/10 hover:bg-white/15 text-white border border-white/20 px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center space-x-2 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-amber-300 ${isResendingEmail ? 'animate-spin' : ''}`} />
+                  <span>{isResendingEmail ? 'Dispatching Email via SMTP...' : 'Resend Email Notification To Admin'}</span>
+                </button>
+              </div>
+            </div>
+
             {/* Submitted Answers List */}
             <div className="space-y-3 bg-gray-900 border border-white/5 p-4 rounded-2xl max-h-80 overflow-y-auto">
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-400 block mb-1">Submitted Form Fields</span>
               {Object.entries(selectedSubmission.answers || {}).map(([key, val], idx) => (
                 <div key={idx} className="border-b border-white/5 pb-2.5 last:border-b-0 space-y-1">
                   <span className="text-xs font-bold text-gray-400 uppercase tracking-wider block">{key}</span>
@@ -1306,7 +1508,7 @@ export const FormManager: React.FC<FormManagerProps> = ({ adminEmail = 'leonanda
 
             {/* Status Selector */}
             <div className="space-y-2">
-              <label className="block text-xs font-bold uppercase tracking-wider text-gray-400">Update Status</label>
+              <label className="block text-xs font-bold uppercase tracking-wider text-gray-400">Update Workflow Status</label>
               <div className="grid grid-cols-4 gap-2">
                 {(['new', 'contacted', 'followed-up', 'archived'] as SubmissionStatus[]).map((st) => (
                   <button
@@ -1326,7 +1528,7 @@ export const FormManager: React.FC<FormManagerProps> = ({ adminEmail = 'leonanda
 
             <div className="pt-4 border-t border-white/10 flex items-center justify-between">
               <span className="text-xs text-gray-500 font-mono">
-                {new Date(selectedSubmission.createdAt).toLocaleString()}
+                Submitted on {new Date(selectedSubmission.createdAt).toLocaleString()}
               </span>
               <button
                 onClick={() => setSelectedSubmission(null)}

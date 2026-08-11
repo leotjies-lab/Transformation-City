@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CheckCircle, Loader2, ChevronDown, Check, X, Sparkles } from 'lucide-react';
 
@@ -72,11 +72,12 @@ const NextSteps: React.FC = () => {
         comments: trimmedMessage,
         request: trimmedMessage,
         status: 'new',
+        emailDeliveryStatus: 'pending',
         createdAt: new Date().toISOString(),
       };
 
       // 1. Save to general submissions collection
-      await addDoc(collection(db, 'submissions'), submissionPayload);
+      const docRef1 = await addDoc(collection(db, 'submissions'), submissionPayload);
 
       // 2. Save to custom_submissions collection with destination email leonandalouw@outlook.com
       const customPayload = {
@@ -93,14 +94,15 @@ const NextSteps: React.FC = () => {
           'Message / Notes': trimmedMessage || 'None'
         },
         status: 'new',
+        emailDeliveryStatus: 'pending',
         createdAt: new Date().toISOString()
       };
 
-      await addDoc(collection(db, 'custom_submissions'), customPayload);
+      const docRef2 = await addDoc(collection(db, 'custom_submissions'), customPayload);
 
-      // 3. Dispatch to backend API to email form administrator (leonandalouw@outlook.com)
+      // 3. Dispatch to backend API to email form administrator (leonandalouw@outlook.com & admin@transformationcitychurch.org)
       try {
-        await fetch('/api/submit-form', {
+        const res = await fetch('/api/submit-form', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -112,8 +114,32 @@ const NextSteps: React.FC = () => {
             createdAt: customPayload.createdAt,
           }),
         });
-      } catch (apiErr) {
+
+        const resData = await res.json();
+        if (res.ok && resData.success) {
+          const sentUpdate = {
+            emailDeliveryStatus: 'sent',
+            emailDispatchedAt: new Date().toISOString(),
+            emailMessageId: resData.messageId || null
+          };
+          await updateDoc(doc(db, 'submissions', docRef1.id), sentUpdate).catch(() => {});
+          await updateDoc(doc(db, 'custom_submissions', docRef2.id), sentUpdate).catch(() => {});
+        } else {
+          const failUpdate = {
+            emailDeliveryStatus: 'failed',
+            emailError: resData.error || 'API returned failure'
+          };
+          await updateDoc(doc(db, 'submissions', docRef1.id), failUpdate).catch(() => {});
+          await updateDoc(doc(db, 'custom_submissions', docRef2.id), failUpdate).catch(() => {});
+        }
+      } catch (apiErr: any) {
         console.warn('Backend email dispatch warning:', apiErr);
+        const failUpdate = {
+          emailDeliveryStatus: 'failed',
+          emailError: apiErr.message || 'Network dispatch error'
+        };
+        await updateDoc(doc(db, 'submissions', docRef1.id), failUpdate).catch(() => {});
+        await updateDoc(doc(db, 'custom_submissions', docRef2.id), failUpdate).catch(() => {});
       }
 
       setIsSubmitting(false);

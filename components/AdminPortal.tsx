@@ -28,6 +28,9 @@ import {
   Filter, 
   Download, 
   Mail, 
+  MailCheck,
+  MailWarning,
+  AlertTriangle,
   Phone, 
   MessageSquare, 
   Clock, 
@@ -134,6 +137,69 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [interestFilter, setInterestFilter] = useState<string>('all');
+  const [emailStatusFilter, setEmailStatusFilter] = useState<string>('all');
+  const [isResendingAdminEmail, setIsResendingAdminEmail] = useState(false);
+  const [resendAdminStatusMsg, setResendAdminStatusMsg] = useState<string | null>(null);
+
+  const getNormalizedNextStepsEmailStatus = (sub: FormSubmission): 'sent' | 'submitted_only' | 'failed' => {
+    if (sub.emailDeliveryStatus === 'sent') return 'sent';
+    if (sub.emailDeliveryStatus === 'failed') return 'failed';
+    return 'submitted_only';
+  };
+
+  const handleResendNextStepsEmail = async (sub: FormSubmission) => {
+    setIsResendingAdminEmail(true);
+    setResendAdminStatusMsg(null);
+
+    try {
+      const res = await fetch('/api/submit-form', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          formTitle: 'Next Steps - Connection Card',
+          ownerEmail: 'admin@transformationcitychurch.org',
+          destination: 'save_and_email',
+          answers: {
+            'First Name': sub.firstName,
+            'Last Name': sub.lastName,
+            'Email': sub.email,
+            'Phone': sub.phone || 'N/A',
+            'Interested In': sub.interestedIn || 'General Interest',
+            'Message': getSubmissionMessage(sub) || 'N/A'
+          },
+          createdAt: sub.createdAt || new Date().toISOString()
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setResendAdminStatusMsg('Email successfully dispatched via SMTP to admin inbox!');
+        if (sub.id) {
+          await updateDoc(doc(db, 'submissions', sub.id), {
+            emailDeliveryStatus: 'sent',
+            emailDispatchedAt: new Date().toISOString(),
+            emailMessageId: data.messageId || null
+          }).catch(() => {});
+        }
+        setSelectedSubmission((prev) => prev ? {
+          ...prev,
+          emailDeliveryStatus: 'sent',
+          emailDispatchedAt: new Date().toISOString()
+        } : null);
+      } else {
+        setResendAdminStatusMsg(`Dispatch failed: ${data.error || 'SMTP delivery issue'}`);
+        if (sub.id) {
+          await updateDoc(doc(db, 'submissions', sub.id), {
+            emailDeliveryStatus: 'failed',
+            emailError: data.error || 'SMTP delivery issue'
+          }).catch(() => {});
+        }
+      }
+    } catch (err: any) {
+      setResendAdminStatusMsg(`Network error: ${err.message}`);
+    } finally {
+      setIsResendingAdminEmail(false);
+    }
+  };
 
   // Selected Submission Modal
   const [selectedSubmission, setSelectedSubmission] = useState<FormSubmission | null>(null);
@@ -827,8 +893,11 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
 
     const statusMatches = statusFilter === 'all' || item.status === statusFilter;
     const interestMatches = interestFilter === 'all' || item.interestedIn === interestFilter;
+    
+    const normEmailStatus = getNormalizedNextStepsEmailStatus(item);
+    const emailMatches = emailStatusFilter === 'all' || normEmailStatus === emailStatusFilter;
 
-    return searchMatches && statusMatches && interestMatches;
+    return searchMatches && statusMatches && interestMatches && emailMatches;
   });
 
   // CSV Export
@@ -1759,6 +1828,21 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
               </select>
             </div>
 
+            <div className="flex items-center space-x-2 bg-gray-950 border border-white/10 px-3 py-2 rounded-2xl text-xs text-gray-300">
+              <Mail className="w-3.5 h-3.5 text-gray-400" />
+              <span className="font-bold uppercase tracking-wider text-[10px] text-gray-500">Email Status:</span>
+              <select 
+                value={emailStatusFilter}
+                onChange={(e) => setEmailStatusFilter(e.target.value)}
+                className="bg-transparent text-white font-medium outline-none cursor-pointer"
+              >
+                <option value="all" className="bg-gray-900 text-white">All Delivery Statuses</option>
+                <option value="sent" className="bg-gray-900 text-emerald-400 font-bold">✉️ Email Sent</option>
+                <option value="submitted_only" className="bg-gray-900 text-amber-400 font-bold">⚠️ Submitted Only</option>
+                <option value="failed" className="bg-gray-900 text-red-400 font-bold">❌ Email Failed</option>
+              </select>
+            </div>
+
             {/* Export CSV */}
             <button
               onClick={exportToCSV}
@@ -1812,8 +1896,9 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
                     <th className="py-4 px-6">Name & Details</th>
                     <th className="py-4 px-6">Captured Message / Request</th>
                     <th className="py-4 px-6">Interested In</th>
+                    <th className="py-4 px-6">Email Dispatch</th>
                     <th className="py-4 px-6">Submitted Date</th>
-                    <th className="py-4 px-6">Status</th>
+                    <th className="py-4 px-6">Workflow</th>
                     <th className="py-4 px-6 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -1873,6 +1958,27 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
                           <span className="inline-block bg-white/5 border border-white/10 text-gray-200 text-xs px-3 py-1 rounded-full font-bold">
                             {sub.interestedIn || 'General Interest'}
                           </span>
+                        </td>
+
+                        <td className="py-4 px-6">
+                          {getNormalizedNextStepsEmailStatus(sub) === 'sent' && (
+                            <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 px-2.5 py-1 rounded-full border border-emerald-500/30">
+                              <MailCheck className="w-3 h-3 text-emerald-400" />
+                              <span>Email Sent</span>
+                            </span>
+                          )}
+                          {getNormalizedNextStepsEmailStatus(sub) === 'submitted_only' && (
+                            <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 px-2.5 py-1 rounded-full border border-amber-500/30">
+                              <MailWarning className="w-3 h-3 text-amber-400" />
+                              <span>Submitted Only</span>
+                            </span>
+                          )}
+                          {getNormalizedNextStepsEmailStatus(sub) === 'failed' && (
+                            <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider bg-red-500/20 text-red-300 px-2.5 py-1 rounded-full border border-red-500/30">
+                              <AlertTriangle className="w-3 h-3 text-red-400" />
+                              <span>Failed</span>
+                            </span>
+                          )}
                         </td>
 
                         <td className="py-4 px-6 text-xs text-gray-400 font-mono">
@@ -1973,8 +2079,70 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
                 <span className="text-gray-200 font-bold">{selectedSubmission.interestedIn}</span>
               </div>
               <div>
-                <span className="text-xs text-gray-500 font-bold uppercase tracking-wider block">Current Status</span>
+                <span className="text-xs text-gray-500 font-bold uppercase tracking-wider block">Current Workflow Status</span>
                 <span className="text-amber-400 font-bold uppercase text-xs">{selectedSubmission.status}</span>
+              </div>
+            </div>
+
+            {/* Email Delivery & Manual Resend Box */}
+            <div className="bg-gray-950 border border-white/10 p-5 rounded-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-gray-400 flex items-center space-x-1.5">
+                  <Mail className="w-4 h-4 text-red-400" />
+                  <span>Outgoing Email Status</span>
+                </span>
+
+                {getNormalizedNextStepsEmailStatus(selectedSubmission) === 'sent' && (
+                  <span className="inline-flex items-center space-x-1 text-[11px] font-bold uppercase bg-emerald-500/20 text-emerald-300 px-3 py-1 rounded-full border border-emerald-500/30">
+                    <MailCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Email Dispatched</span>
+                  </span>
+                )}
+
+                {getNormalizedNextStepsEmailStatus(selectedSubmission) === 'submitted_only' && (
+                  <span className="inline-flex items-center space-x-1 text-[11px] font-bold uppercase bg-amber-500/20 text-amber-300 px-3 py-1 rounded-full border border-amber-500/30">
+                    <MailWarning className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Submitted Only (Not Sent)</span>
+                  </span>
+                )}
+
+                {getNormalizedNextStepsEmailStatus(selectedSubmission) === 'failed' && (
+                  <span className="inline-flex items-center space-x-1 text-[11px] font-bold uppercase bg-red-500/20 text-red-300 px-3 py-1 rounded-full border border-red-500/30">
+                    <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                    <span>Failed</span>
+                  </span>
+                )}
+              </div>
+
+              <p className="text-xs text-gray-300 leading-relaxed">
+                {getNormalizedNextStepsEmailStatus(selectedSubmission) === 'sent'
+                  ? `An email notification was sent to admin@transformationcitychurch.org${selectedSubmission.emailDispatchedAt ? ` on ${new Date(selectedSubmission.emailDispatchedAt).toLocaleString()}` : ''}.`
+                  : `This submission was saved into Firestore. You can manually trigger an outgoing SMTP email dispatch to admin@transformationcitychurch.org using the button below.`}
+              </p>
+
+              {selectedSubmission.emailError && (
+                <div className="bg-red-500/10 border border-red-500/20 p-2.5 rounded-xl text-xs text-red-300">
+                  <strong className="block text-[10px] font-bold uppercase text-red-400">Last Error Details:</strong>
+                  {selectedSubmission.emailError}
+                </div>
+              )}
+
+              {resendAdminStatusMsg && (
+                <div className={`p-2.5 rounded-xl text-xs font-bold ${resendAdminStatusMsg.includes('failed') || resendAdminStatusMsg.includes('error') ? 'bg-red-500/20 text-red-300 border border-red-500/30' : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'}`}>
+                  {resendAdminStatusMsg}
+                </div>
+              )}
+
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={() => handleResendNextStepsEmail(selectedSubmission)}
+                  disabled={isResendingAdminEmail}
+                  className="w-full bg-white/10 hover:bg-white/15 text-white border border-white/20 px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center space-x-2 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-amber-300 ${isResendingAdminEmail ? 'animate-spin' : ''}`} />
+                  <span>{isResendingAdminEmail ? 'Dispatching Email via SMTP...' : 'Resend Email Notification To Admin'}</span>
+                </button>
               </div>
             </div>
 
