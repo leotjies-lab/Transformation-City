@@ -230,11 +230,11 @@ export function getEventsForDateStr(dateStr: string, allEvents: TCCEvent[]): TCC
 }
 
 export const EventCalendar: React.FC = () => {
-  const [currentDate, setCurrentDate] = useState<Date>(new Date(2026, 6, 1)); // Default to July 2026
+  const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
   const [events, setEvents] = useState<TCCEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [viewMode, setViewMode] = useState<'grid' | 'list' | 'annual'>('grid');
+  const [viewMode, setViewMode] = useState<'week' | 'month' | 'month-agenda' | 'annual'>('week');
   
   // Selected Event or Selected Day for Modal View
   const [selectedEvent, setSelectedEvent] = useState<TCCEvent | null>(null);
@@ -292,25 +292,35 @@ export const EventCalendar: React.FC = () => {
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
 
-  const prevMonth = () => {
-    setCurrentDate(new Date(year, month - 1, 1));
+  // Navigation handlers for week/month/annual
+  const prevPeriod = () => {
+    if (viewMode === 'week') {
+      const d = new Date(currentDate);
+      d.setDate(d.getDate() - 7);
+      setCurrentDate(d);
+    } else if (viewMode === 'annual') {
+      setCurrentDate(new Date(year - 1, month, 1));
+    } else {
+      // 'month' or 'month-agenda'
+      setCurrentDate(new Date(year, month - 1, 1));
+    }
   };
 
-  const nextMonth = () => {
-    setCurrentDate(new Date(year, month + 1, 1));
-  };
-
-  const prevYear = () => {
-    setCurrentDate(new Date(year - 1, month, 1));
-  };
-
-  const nextYear = () => {
-    setCurrentDate(new Date(year + 1, month, 1));
+  const nextPeriod = () => {
+    if (viewMode === 'week') {
+      const d = new Date(currentDate);
+      d.setDate(d.getDate() + 7);
+      setCurrentDate(d);
+    } else if (viewMode === 'annual') {
+      setCurrentDate(new Date(year + 1, month, 1));
+    } else {
+      // 'month' or 'month-agenda'
+      setCurrentDate(new Date(year, month + 1, 1));
+    }
   };
 
   const goToToday = () => {
-    const today = new Date();
-    setCurrentDate(new Date(today.getFullYear(), today.getMonth(), 1));
+    setCurrentDate(new Date());
   };
 
   // Filter events by selected category
@@ -318,6 +328,112 @@ export const EventCalendar: React.FC = () => {
     if (selectedCategory === 'All') return events;
     return events.filter(e => e.category === selectedCategory);
   }, [events, selectedCategory]);
+
+  // Helper to get start of week (Sunday)
+  const getStartOfWeek = (d: Date) => {
+    const date = new Date(d);
+    const day = date.getDay();
+    const diff = date.getDate() - day; // Sunday is 0
+    return new Date(date.setDate(diff));
+  };
+
+  // Generate 7 days for the current week
+  const weekDays = useMemo(() => {
+    const start = getStartOfWeek(currentDate);
+    const days: Array<{
+      date: Date;
+      dateStr: string;
+      dayName: string;
+      dayNum: number;
+      monthName: string;
+      isToday: boolean;
+      events: TCCEvent[];
+    }> = [];
+
+    const todayObj = new Date();
+    const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      const yStr = d.getFullYear();
+      const mStr = String(d.getMonth() + 1).padStart(2, '0');
+      const dStr = String(d.getDate()).padStart(2, '0');
+      const dateStr = `${yStr}-${mStr}-${dStr}`;
+
+      const dayEvs = getEventsForDateStr(dateStr, filteredEvents);
+
+      days.push({
+        date: d,
+        dateStr,
+        dayName: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d.getDay()],
+        dayNum: d.getDate(),
+        monthName: MONTH_NAMES[d.getMonth()],
+        isToday: dateStr === todayStr,
+        events: dayEvs
+      });
+    }
+    return days;
+  }, [currentDate, filteredEvents]);
+
+  // Total events this week
+  const totalWeeklyEvents = useMemo(() => {
+    return weekDays.reduce((acc, curr) => acc + curr.events.length, 0);
+  }, [weekDays]);
+
+  // Week header formatted string
+  const weekRangeTitle = useMemo(() => {
+    if (weekDays.length < 7) return '';
+    const first = weekDays[0];
+    const last = weekDays[6];
+
+    if (first.monthName === last.monthName) {
+      return `${first.monthName} ${first.dayNum} – ${last.dayNum}, ${last.date.getFullYear()}`;
+    }
+    return `${first.monthName.slice(0, 3)} ${first.dayNum} – ${last.monthName.slice(0, 3)} ${last.dayNum}, ${last.date.getFullYear()}`;
+  }, [weekDays]);
+
+  // Monthly Agenda Days
+  const monthAgendaDays = useMemo(() => {
+    const list: Array<{
+      date: Date;
+      dateStr: string;
+      dayName: string;
+      dayNum: number;
+      monthName: string;
+      isToday: boolean;
+      events: TCCEvent[];
+    }> = [];
+
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const todayObj = new Date();
+    const todayStr = `${todayObj.getFullYear()}-${String(todayObj.getMonth() + 1).padStart(2, '0')}-${String(todayObj.getDate()).padStart(2, '0')}`;
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const mStr = String(month + 1).padStart(2, '0');
+      const dStr = String(d).padStart(2, '0');
+      const dateStr = `${year}-${mStr}-${dStr}`;
+      const dayDate = new Date(year, month, d);
+      const dayEvs = getEventsForDateStr(dateStr, filteredEvents);
+
+      if (dayEvs.length > 0) {
+        list.push({
+          date: dayDate,
+          dateStr,
+          dayName: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayDate.getDay()],
+          dayNum: d,
+          monthName: MONTH_NAMES[month],
+          isToday: dateStr === todayStr,
+          events: dayEvs
+        });
+      }
+    }
+    return list;
+  }, [year, month, filteredEvents]);
+
+  const totalMonthAgendaEvents = useMemo(() => {
+    return monthAgendaDays.reduce((acc, curr) => acc + curr.events.length, 0);
+  }, [monthAgendaDays]);
 
   // Generate Days Grid for Current Month (including recurring expansions)
   const calendarDays = useMemo(() => {
@@ -395,23 +511,6 @@ export const EventCalendar: React.FC = () => {
 
     return days;
   }, [year, month, filteredEvents]);
-
-  // Events for current month (sorted by day)
-  const currentMonthEvents = useMemo(() => {
-    const list: TCCEvent[] = [];
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-
-    for (let d = 1; d <= daysInMonth; d++) {
-      const mStr = String(month + 1).padStart(2, '0');
-      const dStr = String(d).padStart(2, '0');
-      const dateStr = `${year}-${mStr}-${dStr}`;
-
-      const dayEvs = getEventsForDateStr(dateStr, filteredEvents);
-      list.push(...dayEvs);
-    }
-
-    return list;
-  }, [filteredEvents, year, month]);
 
   // Annual Overview Data for 12 months
   const annualMonthsData = useMemo(() => {
@@ -510,21 +609,25 @@ export const EventCalendar: React.FC = () => {
             <Sparkles className="w-4 h-4" />
             <span>TCC Events Calendar</span>
           </div>
-          <h2 className="text-3xl sm:text-4xl font-black text-gray-900 tracking-tight flex items-center gap-3">
+          <h2 className="text-2xl sm:text-3xl lg:text-4xl font-black text-gray-900 tracking-tight flex items-center gap-3">
             <span>
-              {viewMode === 'annual' ? `Annual Calendar ${year}` : `${MONTH_NAMES[month]} ${year}`}
+              {viewMode === 'week' 
+                ? weekRangeTitle
+                : viewMode === 'annual' 
+                ? `Annual Calendar ${year}` 
+                : `${MONTH_NAMES[month]} ${year}`}
             </span>
           </h2>
         </div>
 
         {/* Navigation & View Toggle */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* Month / Year Nav controls */}
+          {/* Period Nav controls */}
           <div className="flex items-center bg-gray-100 rounded-2xl p-1 border border-gray-200">
             <button
-              onClick={viewMode === 'annual' ? prevYear : prevMonth}
+              onClick={prevPeriod}
               className="p-2.5 rounded-xl hover:bg-white text-gray-700 hover:text-black transition-all shadow-sm"
-              title={viewMode === 'annual' ? "Previous Year" : "Previous Month"}
+              title={viewMode === 'week' ? "Previous Week" : viewMode === 'annual' ? "Previous Year" : "Previous Month"}
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
@@ -533,24 +636,36 @@ export const EventCalendar: React.FC = () => {
               onClick={goToToday}
               className="px-4 py-2 font-black text-xs uppercase tracking-wider text-gray-700 hover:text-[#d32f2f] hover:bg-white rounded-xl transition-all"
             >
-              Today
+              {viewMode === 'week' ? 'This Week' : 'Today'}
             </button>
 
             <button
-              onClick={viewMode === 'annual' ? nextYear : nextMonth}
+              onClick={nextPeriod}
               className="p-2.5 rounded-xl hover:bg-white text-gray-700 hover:text-black transition-all shadow-sm"
-              title={viewMode === 'annual' ? "Next Year" : "Next Month"}
+              title={viewMode === 'week' ? "Next Week" : viewMode === 'annual' ? "Next Year" : "Next Month"}
             >
               <ChevronRight className="w-5 h-5" />
             </button>
           </div>
 
-          {/* Grid / List / Annual Toggle */}
+          {/* Week / Month / Monthly Agenda / Annual Toggle */}
           <div className="flex items-center bg-gray-100 rounded-2xl p-1 border border-gray-200">
             <button
-              onClick={() => setViewMode('grid')}
+              onClick={() => setViewMode('week')}
               className={`flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-                viewMode === 'grid' 
+                viewMode === 'week' 
+                  ? 'bg-[#d32f2f] text-white shadow-md' 
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <List className="w-4 h-4" />
+              <span>Weekly</span>
+            </button>
+
+            <button
+              onClick={() => setViewMode('month')}
+              className={`flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
+                viewMode === 'month' 
                   ? 'bg-[#d32f2f] text-white shadow-md' 
                   : 'text-gray-600 hover:text-gray-900'
               }`}
@@ -560,15 +675,15 @@ export const EventCalendar: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setViewMode('list')}
+              onClick={() => setViewMode('month-agenda')}
               className={`flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-black uppercase tracking-wider transition-all ${
-                viewMode === 'list' 
+                viewMode === 'month-agenda' 
                   ? 'bg-[#d32f2f] text-white shadow-md' 
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
-              <List className="w-4 h-4" />
-              <span className="hidden sm:inline">Agenda</span>
+              <CalendarDays className="w-4 h-4" />
+              <span className="whitespace-nowrap">Monthly Agenda</span>
             </button>
 
             <button
@@ -579,7 +694,7 @@ export const EventCalendar: React.FC = () => {
                   : 'text-gray-600 hover:text-gray-900'
               }`}
             >
-              <CalendarDays className="w-4 h-4" />
+              <Sparkles className="w-4 h-4" />
               <span className="hidden sm:inline">Annual</span>
             </button>
           </div>
@@ -607,8 +722,134 @@ export const EventCalendar: React.FC = () => {
         ))}
       </div>
 
+      {/* WEEKLY AGENDA VIEW (DEFAULT) */}
+      {viewMode === 'week' && (
+        <div className="space-y-6">
+          <div className="flex items-center justify-between text-xs font-bold text-gray-400 uppercase tracking-wider border-b border-gray-100 pb-2">
+            <span>Weekly Schedule: {weekRangeTitle}</span>
+            <span className="bg-red-50 text-[#d32f2f] px-3 py-1 rounded-full font-black">
+              {totalWeeklyEvents} {totalWeeklyEvents === 1 ? 'Event' : 'Events'} This Week
+            </span>
+          </div>
+
+          <div className="space-y-4">
+            {weekDays.map((dayItem) => {
+              const hasEvents = dayItem.events.length > 0;
+
+              return (
+                <div 
+                  key={dayItem.dateStr}
+                  className={`rounded-3xl border transition-all overflow-hidden ${
+                    dayItem.isToday 
+                      ? 'bg-white border-red-200 ring-2 ring-[#d32f2f]/20 shadow-lg' 
+                      : 'bg-gray-50/70 border-gray-100 hover:border-gray-200'
+                  }`}
+                >
+                  <div className="p-4 sm:p-6 flex flex-col md:flex-row md:items-start gap-4 sm:gap-6">
+                    {/* Day Column */}
+                    <div className="flex md:flex-col items-center md:items-start justify-between md:justify-start gap-2 md:w-44 flex-shrink-0">
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <span className={`text-xs font-black uppercase tracking-wider ${
+                            dayItem.isToday ? 'text-[#d32f2f]' : 'text-gray-500'
+                          }`}>
+                            {dayItem.dayName}
+                          </span>
+                          {dayItem.isToday && (
+                            <span className="text-[10px] bg-[#d32f2f] text-white font-black px-2 py-0.5 rounded-full uppercase tracking-wider shadow-sm">
+                              Today
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight mt-0.5">
+                          {dayItem.monthName.slice(0, 3)} {dayItem.dayNum}
+                        </div>
+                      </div>
+
+                      <div className="text-xs font-bold text-gray-400">
+                        {hasEvents ? `${dayItem.events.length} scheduled` : 'No events'}
+                      </div>
+                    </div>
+
+                    {/* Events List for this day */}
+                    <div className="flex-grow space-y-3">
+                      {!hasEvents ? (
+                        <div className="py-3 px-4 rounded-2xl bg-white/60 border border-gray-100 text-xs font-medium text-gray-400 italic">
+                          No scheduled services or activities for this day.
+                        </div>
+                      ) : (
+                        dayItem.events.map((ev, evIdx) => (
+                          <div
+                            key={`${ev.id || ev.title}-${dayItem.dateStr}-${evIdx}`}
+                            onClick={() => setSelectedEvent(ev)}
+                            className={`p-4 sm:p-5 rounded-2xl border transition-all cursor-pointer group flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                              ev.isCancelled
+                                ? 'bg-red-50/50 border-red-200 hover:bg-red-50'
+                                : 'bg-white border-gray-200 hover:border-[#d32f2f]/40 hover:shadow-md'
+                            }`}
+                          >
+                            <div className="space-y-2 flex-grow">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${getCategoryBadgeClass(ev.category)}`}>
+                                  {ev.category || 'Event'}
+                                </span>
+
+                                {ev.recurrence && ev.recurrence !== 'none' && (
+                                  <span className="text-[10px] font-black uppercase tracking-wider bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full flex items-center gap-1 border border-gray-200">
+                                    <Repeat className="w-3 h-3 text-gray-500" />
+                                    <span>Repeats {ev.recurrence}</span>
+                                  </span>
+                                )}
+
+                                {ev.isCancelled && (
+                                  <span className="text-[10px] font-black uppercase tracking-wider bg-red-600 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                                    <Ban className="w-3 h-3" />
+                                    <span>Cancelled This Week</span>
+                                  </span>
+                                )}
+                              </div>
+
+                              <h4 className={`text-lg font-black transition-colors ${
+                                ev.isCancelled ? 'text-gray-400 line-through' : 'text-gray-900 group-hover:text-[#d32f2f]'
+                              }`}>
+                                {ev.title}
+                              </h4>
+
+                              {ev.description && (
+                                <p className="text-xs sm:text-sm text-gray-500 font-medium line-clamp-2 leading-relaxed max-w-2xl">
+                                  {ev.description}
+                                </p>
+                              )}
+                            </div>
+
+                            {/* Time & Action */}
+                            <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 flex-shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100">
+                              {ev.time && (
+                                <div className="flex items-center space-x-1.5 text-xs font-bold text-gray-700 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-200">
+                                  <Clock className="w-3.5 h-3.5 text-[#d32f2f]" />
+                                  <span>{ev.time}</span>
+                                </div>
+                              )}
+
+                              <div className="flex items-center space-x-1 text-xs font-black text-[#d32f2f] group-hover:translate-x-1 transition-transform">
+                                <span>Details</span>
+                                <ArrowRight className="w-4 h-4" />
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* CALENDAR MONTH GRID VIEW */}
-      {viewMode === 'grid' && (
+      {viewMode === 'month' && (
         <div className="space-y-2">
           {/* Day of Week Headers */}
           <div className="grid grid-cols-7 gap-1 sm:gap-2 text-center border-b border-gray-100 pb-3">
@@ -694,86 +935,125 @@ export const EventCalendar: React.FC = () => {
         </div>
       )}
 
-      {/* AGENDA LIST VIEW */}
-      {viewMode === 'list' && (
-        <div className="space-y-4">
+      {/* MONTHLY AGENDA VIEW */}
+      {viewMode === 'month-agenda' && (
+        <div className="space-y-6">
           <div className="flex items-center justify-between text-xs font-bold text-gray-400 uppercase tracking-wider border-b border-gray-100 pb-2">
-            <span>Upcoming Events in {MONTH_NAMES[month]} {year}</span>
-            <span>{currentMonthEvents.length} Events</span>
+            <span>Monthly Agenda: {MONTH_NAMES[month]} {year}</span>
+            <span className="bg-red-50 text-[#d32f2f] px-3 py-1 rounded-full font-black">
+              {totalMonthAgendaEvents} {totalMonthAgendaEvents === 1 ? 'Event' : 'Events'} in {MONTH_NAMES[month]}
+            </span>
           </div>
 
-          {currentMonthEvents.length === 0 ? (
-            <div className="text-center py-12 bg-gray-50 rounded-3xl border border-gray-100 space-y-3">
-              <CalendarIcon className="w-10 h-10 text-gray-300 mx-auto" />
-              <h4 className="text-base font-bold text-gray-700">No events scheduled for {MONTH_NAMES[month]} {year}</h4>
-              <p className="text-xs text-gray-400">Try toggling to a different month or selecting "All" categories.</p>
+          {monthAgendaDays.length === 0 ? (
+            <div className="text-center py-16 bg-gray-50 rounded-3xl border border-gray-100 space-y-3">
+              <CalendarIcon className="w-12 h-12 text-gray-300 mx-auto" />
+              <h4 className="text-lg font-bold text-gray-700">No events scheduled for {MONTH_NAMES[month]} {year}</h4>
+              <p className="text-xs text-gray-400">Try navigating to another month or changing category filters.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {currentMonthEvents.map((ev, idx) => {
-                const dateParts = ev.date ? ev.date.split('-') : [];
-                const dayNum = dateParts[2] || '';
+            <div className="space-y-4">
+              {monthAgendaDays.map((dayItem) => (
+                <div 
+                  key={dayItem.dateStr}
+                  className={`rounded-3xl border transition-all overflow-hidden ${
+                    dayItem.isToday 
+                      ? 'bg-white border-red-200 ring-2 ring-[#d32f2f]/20 shadow-lg' 
+                      : 'bg-gray-50/70 border-gray-100 hover:border-gray-200'
+                  }`}
+                >
+                  <div className="p-4 sm:p-6 flex flex-col md:flex-row md:items-start gap-4 sm:gap-6">
+                    {/* Day Column */}
+                    <div className="flex md:flex-col items-center md:items-start justify-between md:justify-start gap-2 md:w-44 flex-shrink-0">
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <span className={`text-xs font-black uppercase tracking-wider ${
+                            dayItem.isToday ? 'text-[#d32f2f]' : 'text-gray-500'
+                          }`}>
+                            {dayItem.dayName}
+                          </span>
+                          {dayItem.isToday && (
+                            <span className="text-[10px] bg-[#d32f2f] text-white font-black px-2 py-0.5 rounded-full uppercase tracking-wider shadow-sm">
+                              Today
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight mt-0.5">
+                          {dayItem.monthName.slice(0, 3)} {dayItem.dayNum}
+                        </div>
+                      </div>
 
-                return (
-                  <div
-                    key={`${ev.id || ev.title}-${ev.date}-${idx}`}
-                    onClick={() => setSelectedEvent(ev)}
-                    className={`p-5 rounded-3xl border transition-all cursor-pointer flex items-start space-x-4 group ${
-                      ev.isCancelled 
-                        ? 'bg-red-50/40 border-red-200 hover:bg-red-50' 
-                        : 'bg-gray-50 border-gray-100 hover:bg-white hover:shadow-xl'
-                    }`}
-                  >
-                    {/* Date Badge */}
-                    <div className="flex-shrink-0 w-16 text-center bg-white border border-gray-200 rounded-2xl p-2.5 shadow-sm group-hover:border-[#d32f2f] transition-colors">
-                      <span className="block text-[10px] font-black uppercase text-[#d32f2f]">
-                        {MONTH_NAMES[month].slice(0, 3)}
-                      </span>
-                      <span className="block text-2xl font-black text-gray-900 leading-none">
-                        {dayNum}
-                      </span>
+                      <div className="text-xs font-bold text-gray-400">
+                        {dayItem.events.length} {dayItem.events.length === 1 ? 'event' : 'events'}
+                      </div>
                     </div>
 
-                    {/* Event Info */}
-                    <div className="flex-grow space-y-1.5">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${getCategoryBadgeClass(ev.category)}`}>
-                          {ev.category || 'Event'}
-                        </span>
+                    {/* Events List for this day */}
+                    <div className="flex-grow space-y-3">
+                      {dayItem.events.map((ev, evIdx) => (
+                        <div
+                          key={`${ev.id || ev.title}-${dayItem.dateStr}-${evIdx}`}
+                          onClick={() => setSelectedEvent(ev)}
+                          className={`p-4 sm:p-5 rounded-2xl border transition-all cursor-pointer group flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                            ev.isCancelled
+                              ? 'bg-red-50/50 border-red-200 hover:bg-red-50'
+                              : 'bg-white border-gray-200 hover:border-[#d32f2f]/40 hover:shadow-md'
+                          }`}
+                        >
+                          <div className="space-y-2 flex-grow">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${getCategoryBadgeClass(ev.category)}`}>
+                                {ev.category || 'Event'}
+                              </span>
 
-                        {ev.recurrence && ev.recurrence !== 'none' && (
-                          <span className="text-[10px] font-black uppercase tracking-wider bg-gray-200 text-gray-700 px-2 py-0.5 rounded-full flex items-center gap-1">
-                            <Repeat className="w-3 h-3" />
-                            <span>{ev.recurrence}</span>
-                          </span>
-                        )}
+                              {ev.recurrence && ev.recurrence !== 'none' && (
+                                <span className="text-[10px] font-black uppercase tracking-wider bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full flex items-center gap-1 border border-gray-200">
+                                  <Repeat className="w-3 h-3 text-gray-500" />
+                                  <span>Repeats {ev.recurrence}</span>
+                                </span>
+                              )}
 
-                        {ev.isCancelled && (
-                          <span className="text-[10px] font-black uppercase tracking-wider bg-red-600 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
-                            <Ban className="w-3 h-3" />
-                            <span>Cancelled This Week</span>
-                          </span>
-                        )}
-                      </div>
+                              {ev.isCancelled && (
+                                <span className="text-[10px] font-black uppercase tracking-wider bg-red-600 text-white px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                                  <Ban className="w-3 h-3" />
+                                  <span>Cancelled This Week</span>
+                                </span>
+                              )}
+                            </div>
 
-                      <h4 className={`text-lg font-black transition-colors ${
-                        ev.isCancelled ? 'text-gray-400 line-through' : 'text-gray-900 group-hover:text-[#d32f2f]'
-                      }`}>
-                        {ev.title}
-                      </h4>
+                            <h4 className={`text-lg font-black transition-colors ${
+                              ev.isCancelled ? 'text-gray-400 line-through' : 'text-gray-900 group-hover:text-[#d32f2f]'
+                            }`}>
+                              {ev.title}
+                            </h4>
 
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-500 font-medium">
-                        {ev.time && (
-                          <div className="flex items-center space-x-1">
-                            <Clock className="w-3.5 h-3.5 text-gray-400" />
-                            <span>{ev.time}</span>
+                            {ev.description && (
+                              <p className="text-xs sm:text-sm text-gray-500 font-medium line-clamp-2 leading-relaxed max-w-2xl">
+                                {ev.description}
+                              </p>
+                            )}
                           </div>
-                        )}
-                      </div>
+
+                          {/* Time & Action */}
+                          <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 flex-shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-gray-100">
+                            {ev.time && (
+                              <div className="flex items-center space-x-1.5 text-xs font-bold text-gray-700 bg-gray-50 px-3 py-1.5 rounded-xl border border-gray-200">
+                                <Clock className="w-3.5 h-3.5 text-[#d32f2f]" />
+                                <span>{ev.time}</span>
+                              </div>
+                            )}
+
+                            <div className="flex items-center space-x-1 text-xs font-black text-[#d32f2f] group-hover:translate-x-1 transition-transform">
+                              <span>Details</span>
+                              <ArrowRight className="w-4 h-4" />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -801,7 +1081,7 @@ export const EventCalendar: React.FC = () => {
                   <button
                     onClick={() => {
                       setCurrentDate(new Date(year, mObj.monthIdx, 1));
-                      setViewMode('grid');
+                      setViewMode('month');
                     }}
                     className="font-black text-base text-gray-900 hover:text-[#d32f2f] transition-colors"
                   >

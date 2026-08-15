@@ -1,17 +1,20 @@
 
 import React from 'react';
 
+const heroBg = 'https://picsum.photos/id/452/1920/1080';
+
 const Hero: React.FC = () => {
   return (
-    <section id="home" className="relative min-h-[100dvh] flex items-center justify-center overflow-hidden py-16 sm:py-20">
-      {/* Background Overlay */}
+    <section id="home" className="relative min-h-[100dvh] flex items-center justify-center overflow-hidden py-16 sm:py-20 bg-gray-950">
+      {/* Background Overlay with Worship Atmosphere */}
       <div className="absolute inset-0 z-0">
         <img 
-          src="/hero-background.jpg" 
+          src={heroBg} 
           alt="Worship Background" 
-          className="w-full h-full object-cover brightness-[0.3]"
+          className="w-full h-full object-cover brightness-[0.35] contrast-[1.05]"
+          referrerPolicy="no-referrer"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-gray-900/80 to-transparent"></div>
+        <div className="absolute inset-0 bg-gradient-to-t from-gray-950/90 via-gray-950/40 to-gray-950/80"></div>
       </div>
 
       <div className="relative z-10 text-center px-4 sm:px-6 max-w-4xl mx-auto">
@@ -52,3 +55,4 @@ const Hero: React.FC = () => {
 };
 
 export default Hero;
+
