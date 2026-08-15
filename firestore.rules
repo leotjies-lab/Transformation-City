@@ -31,5 +31,11 @@ service cloud.firestore {
       allow create: if request.resource.data.formId is string;
       allow read, update, delete: if true;
     }
+
+    // Sermons & Media Collateral - Public read for published sermons, full access for admin management
+    match /sermons/{sermonId} {
+      allow read: if true;
+      allow create, update, delete: if true;
+    }
   }
 }

@@ -26,7 +26,7 @@ const NextSteps: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState('');
 
   const steps = [
-    { id: 1, title: 'Join Our Family', desc: 'Find a place where you truly belong.' },
+    { id: 1, title: 'Join Our Family', desc: 'Experience the wonder to belong in a loving multicultural family.' },
     { id: 2, title: 'Experience the Impact Life Journey', desc: 'Learn what it means to follow Christ in your world.' },
     { id: 3, title: 'Be Part of a Connect Group', desc: 'Engage in supportive, life-changing relationships.' },
     { id: 4, title: 'Live a Transformation Life', desc: "Reflecting God's glory in your world." },
@@ -173,7 +173,7 @@ const NextSteps: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
           <div>
-            <h2 className="text-sm font-bold tracking-widest text-red-400 uppercase mb-2">Our Pathway</h2>
+            <h2 className="text-sm font-bold tracking-widest text-red-400 uppercase mb-2">Your next step</h2>
             <h3 className="text-4xl md:text-5xl font-black text-white mb-6 leading-tight">
               The Journey
             </h3>
@@ -181,7 +181,7 @@ const NextSteps: React.FC = () => {
               Whether you are just starting or already matured in your relationship with Christ, we invite you to join us in this wonderful, life changing journey. 
             </p>
 
-            <div className="p-6 bg-white/5 border border-white/10 rounded-2xl text-gray-300 italic text-base">
+            <div className="p-6 bg-white/5 border border-white/10 rounded-2xl text-gray-300 italic text-base text-center">
               "Connecting with our community is the best way to discover your gifts and experience real life transformation together."
             </div>
           </div>

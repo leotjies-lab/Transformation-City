@@ -2,12 +2,12 @@
 import { NavItem, Ministry, WeeklyActivity } from './types';
 
 export const NAV_ITEMS: NavItem[] = [
-  { label: 'Home', href: '/' },
   { label: 'About Us', href: '/#about' },
   { label: 'Ministries', href: '/#ministries' },
   { label: 'Transformation Life', href: '/transformation-life' },
+  { label: 'Sermons', href: '/sermons' },
   { label: 'Activities', href: '/activities' },
-  { label: 'Join Us', href: '/#services' },
+  { label: 'Join Us', href: '/#the-journey' },
 ];
 
 export const MINISTRIES: Ministry[] = [

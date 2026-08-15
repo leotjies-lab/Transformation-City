@@ -26,7 +26,7 @@ const ActivitiesPage: React.FC = () => {
         <div className="bg-white rounded-3xl p-8 sm:p-12 border border-gray-100 shadow-xl space-y-8">
           <div className="text-center max-w-xl mx-auto">
             <h2 className="text-3xl font-black text-gray-900 tracking-tight mb-2">
-              Weekly Rhythm & Gatherings
+              Weekly Rhythm & Activities
             </h2>
             <p className="text-gray-500 font-medium">
               Regular weekly services and ministry practice times at Transformation City Church.

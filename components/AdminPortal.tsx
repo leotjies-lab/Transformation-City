@@ -21,6 +21,7 @@ import { auth, db } from '../firebase';
 import { FormSubmission, SubmissionStatus, AdminMember, TCCEvent } from '../types';
 import { DEFAULT_INITIAL_EVENTS } from './EventCalendar';
 import FormManager from './FormManager';
+import WebsiteCollateralManager from './WebsiteCollateralManager';
 import { 
   ShieldCheck, 
   LogOut, 
@@ -58,7 +59,8 @@ import {
   Ban,
   CalendarCheck,
   Check,
-  FileText
+  FileText,
+  Headphones
 } from 'lucide-react';
 
 interface AdminPortalProps {
@@ -86,7 +88,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
   const [submittingAuth, setSubmittingAuth] = useState(false);
 
   // Active Navigation Tab
-  const [activeTab, setActiveTab] = useState<'submissions' | 'admins' | 'events' | 'custom_forms'>('events');
+  const [activeTab, setActiveTab] = useState<'submissions' | 'admins' | 'events' | 'custom_forms' | 'collateral'>('events');
 
   // Events state
   const [eventsList, setEventsList] = useState<TCCEvent[]>([]);
@@ -773,12 +775,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
     }
 
     try {
-      if (isRegistering) {
-        await createUserWithEmailAndPassword(auth, inputEmail, inputPass);
-        setAuthSuccess('TCC Admin account created successfully!');
-      } else {
-        await signInWithEmailAndPassword(auth, inputEmail, inputPass);
-      }
+      await signInWithEmailAndPassword(auth, inputEmail, inputPass);
     } catch (err: any) {
       console.error('Auth error:', err);
       if (err.code === 'auth/operation-not-allowed' || err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found') {
@@ -1030,26 +1027,17 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
               ) : (
                 <>
                   <Lock className="w-4 h-4" />
-                  <span>{isRegistering ? 'Create Admin Account' : 'Sign In to Portal'}</span>
+                  <span>Sign In to Portal</span>
                 </>
               )}
             </button>
           </form>
 
           <div className="mt-8 pt-6 border-t border-white/10 text-center space-y-4">
-            <button
-              type="button"
-              onClick={() => {
-                setIsRegistering(!isRegistering);
-                setAuthError('');
-                setAuthSuccess('');
-              }}
-              className="text-xs text-gray-400 hover:text-white transition-colors underline font-medium"
-            >
-              {isRegistering 
-                ? 'Already have an admin account? Sign In' 
-                : "First time? Click here to Register as Admin"}
-            </button>
+            <div className="text-xs text-gray-400 font-medium bg-white/5 p-3 rounded-xl border border-white/10">
+              <span className="text-amber-400 font-bold block mb-1">🔒 Admin Registration Restricted</span>
+              Public registration is disabled. Only existing administrators can add new admin accounts from within the portal.
+            </div>
 
             <div className="block">
               <button
@@ -1149,6 +1137,18 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
           >
             <Inbox className="w-4 h-4 text-[#a52424]" />
             <span>Form Submissions ({submissions.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('collateral')}
+            className={`px-6 py-3.5 font-black text-xs sm:text-sm uppercase tracking-wider rounded-t-2xl transition-all flex items-center space-x-2.5 ${
+              activeTab === 'collateral'
+                ? 'bg-gray-900 text-white border-t-2 border-[#a52424] shadow-lg'
+                : 'text-gray-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Headphones className="w-4 h-4 text-amber-400" />
+            <span>Manage Website Collateral</span>
           </button>
 
           <button
@@ -1733,6 +1733,10 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
               )}
             </div>
           </div>
+        ) : activeTab === 'collateral' ? (
+          <WebsiteCollateralManager 
+            adminEmail={currentUser?.email || adminSession?.email || 'admin@transformationcitychurch.org'} 
+          />
         ) : activeTab === 'custom_forms' ? (
           <FormManager 
             adminEmail={currentUser?.email || adminSession?.email || 'leonandalouw@outlook.com'} 

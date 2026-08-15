@@ -50,25 +50,62 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentView }) => {
 
           {/* Desktop Navigation Links */}
           <div className="hidden lg:flex items-center space-x-3 xl:space-x-6 flex-shrink-0">
-            {NAV_ITEMS.map((item) => (
-              <a 
-                key={item.label}
-                href={item.href}
-                onClick={(e) => handleLinkClick(e, item.href)}
-                className={`font-black text-xs xl:text-sm uppercase tracking-wider transition-colors whitespace-nowrap hover:text-[#d32f2f] px-1 py-1 ${
-                  isScrolled ? 'text-gray-800' : 'text-gray-100'
-                } ${item.href.includes(currentView) && currentView !== 'home' ? 'text-[#d32f2f]' : ''}`}
-              >
-                {item.label}
-              </a>
-            ))}
-            <a
-              href="/admin"
-              onClick={(e) => handleLinkClick(e, '/admin')}
-              className="bg-[#d32f2f] text-white px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-wider hover:bg-red-700 transition-all shadow-md whitespace-nowrap flex-shrink-0"
-            >
-              Admin
-            </a>
+            {NAV_ITEMS.map((item) => {
+              if (item.subItems && item.subItems.length > 0) {
+                return (
+                  <div key={item.label} className="relative group">
+                    <a
+                      href={item.href}
+                      onClick={(e) => handleLinkClick(e, item.href)}
+                      className={`font-black text-xs xl:text-sm uppercase tracking-wider transition-colors whitespace-nowrap hover:text-[#d32f2f] px-1 py-1 flex items-center space-x-1 ${
+                        isScrolled ? 'text-gray-800' : 'text-gray-100'
+                      } ${item.href.includes(currentView) && currentView !== 'home' ? 'text-[#d32f2f]' : ''}`}
+                    >
+                      <span>{item.label}</span>
+                      <svg className="w-3.5 h-3.5 transition-transform group-hover:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </a>
+
+                    {/* Dropdown Menu */}
+                    <div className="absolute left-0 top-full pt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                      <div className="bg-gray-900 border border-white/10 rounded-2xl p-2 shadow-2xl min-w-[180px] space-y-1">
+                        {item.subItems.map((sub) => (
+                          <a
+                            key={sub.label}
+                            href={sub.href}
+                            onClick={(e) => handleLinkClick(e, sub.href)}
+                            className="block px-4 py-2.5 text-xs font-bold uppercase tracking-wider text-gray-200 hover:text-white hover:bg-red-600/30 rounded-xl transition-all"
+                          >
+                            {sub.label}
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              const isJoinUs = item.label.toLowerCase() === 'join us';
+              return (
+                <a 
+                  key={item.label}
+                  href={item.href}
+                  onClick={(e) => handleLinkClick(e, item.href)}
+                  className={`font-black text-xs xl:text-sm uppercase tracking-wider transition-colors whitespace-nowrap px-1 py-1 ${
+                    isJoinUs
+                      ? isScrolled 
+                        ? 'text-[#a52424] hover:text-[#801b1b]' 
+                        : 'text-red-400 hover:text-red-300'
+                      : isScrolled 
+                        ? 'text-gray-800 hover:text-[#d32f2f]' 
+                        : 'text-gray-100 hover:text-[#d32f2f]'
+                  } ${!isJoinUs && item.href.includes(currentView) && currentView !== 'home' ? 'text-[#d32f2f]' : ''}`}
+                >
+                  {item.label}
+                </a>
+              );
+            })}
           </div>
 
           {/* Mobile / Tablet Hamburger Toggle */}
@@ -89,27 +126,38 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentView }) => {
       {/* Mobile Drawer */}
       <div className={`lg:hidden bg-white shadow-2xl transition-all duration-300 overflow-hidden ${isOpen ? 'max-h-screen border-t border-gray-100 py-4' : 'max-h-0'}`}>
         <div className="px-5 space-y-2">
-          {NAV_ITEMS.map((item) => (
-            <a
-              key={item.label}
-              href={item.href}
-              onClick={(e) => handleLinkClick(e, item.href)}
-              className={`block px-4 py-3 text-gray-800 hover:text-[#d32f2f] font-black uppercase tracking-wider text-sm border-b border-gray-100 transition-colors ${
-                item.href.includes(currentView) && currentView !== 'home' ? 'text-[#d32f2f]' : ''
-              }`}
-            >
-              {item.label}
-            </a>
-          ))}
-          <div className="pt-2">
-            <a
-              href="/admin"
-              onClick={(e) => handleLinkClick(e, '/admin')}
-              className="block w-full text-center bg-[#d32f2f] text-white py-3 rounded-xl font-black uppercase tracking-wider text-sm hover:bg-red-700 transition-all shadow-md"
-            >
-              TCC Admin Portal
-            </a>
-          </div>
+          {NAV_ITEMS.map((item) => {
+            const isJoinUs = item.label.toLowerCase() === 'join us';
+            return (
+              <div key={item.label} className="border-b border-gray-100 last:border-b-0 pb-2">
+                <a
+                  href={item.href}
+                  onClick={(e) => handleLinkClick(e, item.href)}
+                  className={`block px-4 py-2.5 font-black uppercase tracking-wider text-sm transition-colors ${
+                    isJoinUs 
+                      ? 'text-[#a52424] hover:text-[#801b1b]' 
+                      : 'text-gray-800 hover:text-[#d32f2f]'
+                  } ${!isJoinUs && item.href.includes(currentView) && currentView !== 'home' ? 'text-[#d32f2f]' : ''}`}
+                >
+                  {item.label}
+                </a>
+                {item.subItems && item.subItems.length > 0 && (
+                  <div className="pl-6 space-y-1 my-1">
+                    {item.subItems.map((sub) => (
+                      <a
+                        key={sub.label}
+                        href={sub.href}
+                        onClick={(e) => handleLinkClick(e, sub.href)}
+                        className="block px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-gray-600 hover:text-[#d32f2f] bg-gray-50 rounded-lg"
+                      >
+                        • {sub.label}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     </nav>

@@ -1,5 +1,6 @@
 {
   "name": "Transformation City Church",
-  "description": "A vibrant, one-page community website for Transformation City Church (TCC), focused on spiritual growth, community impact, and the 'Impact Life'.",
-  "requestFramePermissions": []
+  "description": "A vibrant community website for Transformation City Church (TCC), featuring sermon recordings, form submissions, event management, and Google Drive collateral integration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

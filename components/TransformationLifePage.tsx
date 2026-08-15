@@ -50,7 +50,7 @@ const TransformationLifePage: React.FC<Props> = ({ onNavigate }) => {
   return (
     <div className="min-h-screen bg-white">
       {/* Hero Section */}
-      <section className="relative h-[70vh] flex items-center justify-center overflow-hidden">
+      <section className="relative min-h-[60vh] md:min-h-[70vh] pt-32 sm:pt-36 md:pt-40 pb-16 flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0 z-0">
           <img 
             src="https://images.unsplash.com/photo-1490730141103-6ac27d020028?auto=format&fit=crop&q=80&w=1920" 
@@ -61,11 +61,11 @@ const TransformationLifePage: React.FC<Props> = ({ onNavigate }) => {
         </div>
 
         <div className="relative z-10 text-center px-4 max-w-5xl mx-auto">
-          <h1 className="text-5xl md:text-8xl font-black text-white mb-6 tracking-tighter leading-none">
-            LIVE A <br/>
+          <h1 className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-black text-white mb-6 tracking-tighter leading-tight sm:leading-none">
+            LIVE A <br className="hidden sm:inline" />{' '}
             <span className="text-church-red italic">TRANSFORMATION</span> LIFE
           </h1>
-          <p className="text-xl md:text-2xl text-gray-200 font-light tracking-[0.2em] uppercase max-w-3xl mx-auto">
+          <p className="text-base sm:text-xl md:text-2xl text-gray-200 font-light tracking-[0.2em] uppercase max-w-3xl mx-auto">
             Our daily commitment to follow Jesus
           </p>
         </div>
@@ -75,7 +75,7 @@ const TransformationLifePage: React.FC<Props> = ({ onNavigate }) => {
       <section className="py-24 bg-white">
         <div className="max-w-4xl mx-auto px-4">
           <div className="bg-gray-50 p-12 rounded-[3rem] border-l-8 border-church-red shadow-xl">
-            <p className="text-2xl md:text-3xl font-medium text-gray-900 leading-relaxed mb-8 text-left">
+            <p className="text-2xl md:text-3xl font-medium text-gray-900 leading-relaxed mb-8 text-center">
               "To Live a Transformation Life is the definitive step in our church’s strategy, representing a daily commitment to follow Jesus and serve as God’s transformation agent in our city."
             </p>
             <div className="text-lg text-gray-600 space-y-4 leading-relaxed text-left">

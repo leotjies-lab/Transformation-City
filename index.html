@@ -16,13 +16,42 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Montserrat:wght@700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Alex+Brush&family=Dancing+Script:wght@600;700&family=Great+Vibes&family=Inter:wght@300;400;500;600;700;800&family=Montserrat:wght@400;600;700;800;900&family=Satisfy&display=swap" rel="stylesheet">
+    <link href="https://fonts.cdnfonts.com/css/amsterdam" rel="stylesheet">
+    <link href="https://fonts.cdnfonts.com/css/amsterdam-signature" rel="stylesheet">
     <style>
+      @font-face {
+        font-family: 'Amsterdam';
+        font-style: normal;
+        font-weight: 400;
+        src: local('Amsterdam'),
+             url('/fonts/Amsterdam.woff') format('woff'),
+             url('https://fonts.cdnfonts.com/s/17992/Amsterdam.woff') format('woff');
+        font-display: swap;
+      }
+      @font-face {
+        font-family: 'Amsterdam Signature';
+        font-style: normal;
+        font-weight: 400;
+        src: local('Amsterdam Signature'),
+             url('/fonts/AmsterdamSignature.woff') format('woff'),
+             url('https://fonts.cdnfonts.com/s/44456/AmsterdamSignature-PKO4P.woff') format('woff');
+        font-display: swap;
+      }
       body {
         font-family: 'Inter', sans-serif;
       }
       h1, h2, h3, h4 {
         font-family: 'Montserrat', sans-serif;
+      }
+      .font-montserrat {
+        font-family: 'Montserrat', sans-serif;
+      }
+      .font-amsterdam {
+        font-family: 'Amsterdam', 'Amsterdam Signature', 'Alex Brush', 'Dancing Script', cursive;
+      }
+      .font-modern-script {
+        font-family: 'Amsterdam', 'Amsterdam Signature', 'Alex Brush', 'Great Vibes', 'Dancing Script', cursive;
       }
       .bg-church-red {
         background-color: #a52424;

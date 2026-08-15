@@ -9,15 +9,22 @@ import NextSteps from './components/NextSteps';
 import ServiceInvite from './components/ServiceInvite';
 import ActivitiesPage from './components/ActivitiesPage';
 import TransformationLifePage from './components/TransformationLifePage';
+import SermonsPage from './components/SermonsPage';
 import AdminPortal from './components/AdminPortal';
 import Footer from './components/Footer';
 
-type View = 'home' | 'activities' | 'transformation-life' | 'admin';
+type View = 'home' | 'activities' | 'transformation-life' | 'sermons' | 'admin';
 
 const getViewFromPath = (path: string): View => {
-  if (path.includes('/admin')) return 'admin';
-  if (path.includes('/activities')) return 'activities';
-  if (path.includes('/transformation-life')) return 'transformation-life';
+  const search = typeof window !== 'undefined' ? window.location.search : '';
+  const searchParams = new URLSearchParams(search);
+  const redirectPath = searchParams.get('p') || '';
+  const combined = (path + ' ' + redirectPath).toLowerCase();
+
+  if (combined.includes('admin')) return 'admin';
+  if (combined.includes('activities') || combined.includes('gatherings')) return 'activities';
+  if (combined.includes('transformation-life')) return 'transformation-life';
+  if (combined.includes('sermons')) return 'sermons';
   return 'home';
 };
 
@@ -27,6 +34,13 @@ const App: React.FC = () => {
   });
 
   const handleLocationChange = useCallback(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const redirectPath = searchParams.get('p');
+    if (redirectPath) {
+      const cleanPath = redirectPath.startsWith('/') ? redirectPath : '/' + redirectPath;
+      window.history.replaceState({}, '', cleanPath);
+    }
+
     const path = window.location.pathname;
     const hash = window.location.hash;
     const nextView = getViewFromPath(path);
@@ -91,14 +105,16 @@ const App: React.FC = () => {
         return <ActivitiesPage />;
       case 'transformation-life': 
         return <TransformationLifePage onNavigate={navigate} />;
+      case 'sermons':
+        return <SermonsPage onNavigate={navigate} />;
       default:
         return (
           <>
             <Hero />
             <About />
-            <NextSteps />
             <Ministries />
             <Services />
+            <NextSteps />
             <ServiceInvite />
           </>
         );

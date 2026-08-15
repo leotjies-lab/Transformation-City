@@ -18,7 +18,7 @@ const Services: React.FC = () => {
               <h2 className="text-xs sm:text-sm font-bold tracking-[0.3em] uppercase text-white/80 mb-2">
                 SUNDAY MORNING
               </h2>
-              <div className="text-6xl sm:text-7xl md:text-8xl font-black leading-none text-white">
+              <div className="text-4xl xs:text-5xl sm:text-7xl md:text-8xl font-black leading-none text-white whitespace-nowrap tracking-tight">
                 09:00 AM
               </div>
             </div>
@@ -26,7 +26,7 @@ const Services: React.FC = () => {
             <ul className="space-y-5">
               {[
                 'Christ focus worship',
-                'Practical bible teaching',
+                'Practical Bible teaching',
                 'Little Lights (kids ministry)'
               ].map((item, idx) => (
                 <li key={idx} className="flex items-center group">
@@ -40,7 +40,7 @@ const Services: React.FC = () => {
               ))}
             </ul>
 
-            <p className="text-lg sm:text-xl text-white/90 font-medium leading-relaxed pt-2">
+            <p className="text-lg sm:text-xl text-white/90 font-medium leading-relaxed pt-2 justify-center">
               Don't run off too quickly! We’d love to catch up over coffee right after the morning service.
             </p>
           </div>

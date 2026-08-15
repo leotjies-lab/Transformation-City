@@ -117,3 +117,39 @@ export interface TCCEvent {
   createdAt?: string;
   updatedAt?: string;
 }
+
+export interface Sermon {
+  id?: string;
+  title: string;
+  speaker: string;
+  sermonDate: string; // YYYY-MM-DD
+  theme?: string;
+  series?: string;
+  audioLength?: string; // e.g. "45:30"
+  description?: string;
+  scripture?: string;
+  driveFileId?: string;
+  driveFileName?: string;
+  audioUrl: string; // Stream URL
+  downloadUrl?: string; // Direct download link
+  driveWebViewLink?: string;
+  fileSize?: string;
+  isPublished: boolean; // Checkbox to make available on front end
+  isArchived?: boolean;
+  status?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface DriveAudioFile {
+  id: string;
+  name: string;
+  mimeType?: string;
+  size?: string;
+  createdTime?: string;
+  modifiedTime?: string;
+  webViewLink?: string;
+  webContentLink?: string;
+}
+
+

@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Transformation City Church</title>
+    <script>
+      (function() {
+        var path = window.location.pathname;
+        var search = window.location.search;
+        var hash = window.location.hash;
+        var target = path + search + hash;
+        window.location.replace('/?p=' + encodeURIComponent(target));
+      })();
+    </script>
+  </head>
+  <body>
+  </body>
+</html>

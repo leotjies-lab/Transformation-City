@@ -20,12 +20,12 @@ const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
           <div className="col-span-1 lg:col-span-1">
             <button 
               onClick={(e) => handleNav(e as any, '/')}
-              className="mb-8 block text-left focus:outline-none"
+              className="mb-6 block text-left focus:outline-none"
             >
               <TCCLogo variant="dark" className="h-14" />
             </button>
-            <p className="text-gray-400 mb-8 leading-relaxed text-lg">
-              Ordinary people living extraordinary lives. Transforming our world by sharing the hope and power we have received.
+            <p className="text-gray-400 mb-8 leading-relaxed text-base">
+              A community where your journey with God and your relationships with others are at the heart of everything we do
             </p>
           </div>
 
@@ -35,8 +35,9 @@ const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
             <ul className="space-y-4 text-gray-400 font-bold">
               <li><a href="/" onClick={(e) => handleNav(e, '/')} className="hover:text-white transition-colors">Home</a></li>
               <li><a href="/activities" onClick={(e) => handleNav(e, '/activities')} className="hover:text-white transition-colors">Weekly Activities</a></li>
-              <li><a href="/#about" onClick={(e) => handleNav(e, '/')} className="hover:text-white transition-colors">Our Vision</a></li>
-              <li><a href="/#ministries" onClick={(e) => handleNav(e, '/')} className="hover:text-white transition-colors">Ministries</a></li>
+              <li><a href="/#about" onClick={(e) => handleNav(e, '/#about')} className="hover:text-white transition-colors">Our Vision</a></li>
+              <li><a href="/#ministries" onClick={(e) => handleNav(e, '/#ministries')} className="hover:text-white transition-colors">Ministries</a></li>
+              <li><a href="/transformation-life" onClick={(e) => handleNav(e, '/transformation-life')} className="hover:text-white transition-colors">Transformation Life</a></li>
               <li>
                 <a href="/admin" onClick={(e) => handleNav(e, '/admin')} className="text-[#a52424] hover:text-red-400 transition-colors inline-flex items-center space-x-1">
                   <span>TCC Admin Portal</span>

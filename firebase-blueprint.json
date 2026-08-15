@@ -77,6 +77,29 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["formId", "formTitle", "answers", "status", "createdAt"]
+    },
+    "sermons": {
+      "title": "Sermons & Website Collateral",
+      "description": "Church sermon recordings and media collateral",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "speaker": { "type": "string" },
+        "sermonDate": { "type": "string" },
+        "theme": { "type": "string" },
+        "series": { "type": "string" },
+        "audioLength": { "type": "string" },
+        "description": { "type": "string" },
+        "scripture": { "type": "string" },
+        "audioUrl": { "type": "string" },
+        "downloadUrl": { "type": "string" },
+        "driveFileId": { "type": "string" },
+        "driveFileName": { "type": "string" },
+        "isPublished": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "speaker", "sermonDate", "isPublished"]
     }
   },
   "firestore": {
@@ -99,6 +122,10 @@
     "/custom_submissions/{submissionId}": {
       "schema": { "$ref": "#/entities/custom_submissions" },
       "description": "Submissions for custom church forms"
+    },
+    "/sermons/{sermonId}": {
+      "schema": { "$ref": "#/entities/sermons" },
+      "description": "Sermon audio recordings and media metadata"
     }
   }
 }

@@ -7,7 +7,7 @@ const Hero: React.FC = () => {
       {/* Background Overlay */}
       <div className="absolute inset-0 z-0">
         <img 
-          src="https://picsum.photos/id/452/1920/1080" 
+          src="/hero-background.jpg" 
           alt="Worship Background" 
           className="w-full h-full object-cover brightness-[0.3]"
         />
@@ -16,8 +16,12 @@ const Hero: React.FC = () => {
 
       <div className="relative z-10 text-center px-4 sm:px-6 max-w-4xl mx-auto">
         <h1 className="text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-black text-white mb-6 tracking-tight leading-none sm:leading-tight">
-          ORDINARY PEOPLE<br/>
-          <span className="text-church-red italic">EXTRAORDINARY</span> LIVES
+          <span className="font-montserrat">ORDINARY PEOPLE</span>
+          <br />
+          <span className="font-amsterdam text-church-red font-normal normal-case text-4xl sm:text-6xl md:text-7xl lg:text-8xl inline-block mx-1.5 sm:mx-2 tracking-normal align-middle">
+            Extraordinary
+          </span>
+          <span className="font-montserrat">LIVES</span>
         </h1>
         <p className="text-base sm:text-xl md:text-2xl text-gray-200 mb-8 sm:mb-10 font-light max-w-2xl mx-auto">
           Welcome to Transformation City Church. A community where your journey with God and your relationships with others are at the heart of everything we do.
