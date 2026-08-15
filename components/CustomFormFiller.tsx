@@ -539,7 +539,7 @@ export const CustomFormFiller: React.FC<CustomFormFillerProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto custom-modal-scroll">
       {formContent}
     </div>
   );

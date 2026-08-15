@@ -1251,7 +1251,7 @@ export const EventCalendar: React.FC = () => {
               <h3 className="text-2xl font-black text-gray-900 mt-1">Scheduled Events</h3>
             </div>
 
-            <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+            <div className="space-y-3 max-h-80 overflow-y-auto pr-1 custom-modal-scroll">
               {selectedDateEvents.items.map((ev, idx) => (
                 <div
                   key={`${ev.id || ev.title}-${idx}`}

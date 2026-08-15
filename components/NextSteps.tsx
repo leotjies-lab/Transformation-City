@@ -224,13 +224,13 @@ const NextSteps: React.FC = () => {
           <div className="bg-white rounded-3xl sm:rounded-[2.5rem] w-full max-w-2xl max-h-[90vh] flex flex-col relative shadow-2xl overflow-hidden my-auto border border-gray-100">
             <button 
               onClick={handleCloseModal}
-              className="absolute top-5 right-5 sm:top-6 sm:right-6 z-20 text-gray-400 hover:text-gray-900 transition-colors bg-gray-100 hover:bg-gray-200 p-2 rounded-full"
+              className="absolute top-5 right-5 sm:top-6 sm:right-6 z-20 text-gray-400 hover:text-gray-900 transition-colors bg-gray-100 hover:bg-gray-200 p-2 rounded-full shadow-sm"
               aria-label="Close modal"
             >
               <svg className="w-6 h-6 sm:w-7 sm:h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
             </button>
             
-            <div className="p-6 sm:p-8 md:p-10 overflow-y-auto">
+            <div className="p-6 sm:p-8 md:p-10 overflow-y-auto custom-modal-scroll overscroll-contain">
               {isSubmitted ? (
                 <div className="text-center py-8">
                   <div className="w-20 h-20 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto mb-6">
@@ -328,10 +328,6 @@ const NextSteps: React.FC = () => {
                         <label className="block text-xs sm:text-sm font-bold text-gray-800 dark:text-gray-900 uppercase tracking-wide">
                           Interested In <span className="text-red-500">*</span>
                         </label>
-                        <span className="text-[11px] font-bold text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full flex items-center space-x-1">
-                          <ChevronDown className="w-3 h-3 text-red-600" />
-                          <span>Dropdown Menu • Multiple Selections</span>
-                        </span>
                       </div>
 
                       {/* Dropdown Header Trigger Box */}
@@ -372,9 +368,9 @@ const NextSteps: React.FC = () => {
 
                       {/* Dropdown Options List */}
                       {isDropdownOpen && (
-                        <div className="absolute left-0 right-0 mt-2 bg-white border border-gray-200 rounded-2xl shadow-2xl z-50 p-2 space-y-1 max-h-64 overflow-y-auto">
+                        <div className="absolute left-0 right-0 mt-2 bg-white border border-gray-200 rounded-2xl shadow-2xl z-50 p-2 space-y-1 max-h-64 overflow-y-auto custom-modal-scroll">
                           <div className="px-3 py-1.5 text-[11px] font-black uppercase tracking-wider text-gray-500 border-b border-gray-100 mb-1 flex justify-between items-center">
-                            <span>Dropdown Menu Options</span>
+                            <span>Available Steps</span>
                             <span className="text-red-700 font-bold">{interestedIn.length} Selected</span>
                           </div>
                           {INTERESTED_OPTIONS.map((option) => {
