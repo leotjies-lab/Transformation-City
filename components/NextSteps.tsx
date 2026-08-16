@@ -208,12 +208,12 @@ const NextSteps: React.FC = () => {
 
               <button 
                 onClick={() => setIsModalOpen(true)}
-                className="w-full bg-white text-[#a52424] py-3.5 px-6 rounded-2xl font-black text-base md:text-lg hover:bg-gray-100 transition-all transform hover:scale-[1.01] shadow-lg uppercase tracking-wider relative z-10"
+                className="w-full bg-white text-church-red py-3.5 px-6 rounded-2xl font-black text-base md:text-lg hover:bg-gray-100 transition-all transform hover:scale-[1.01] shadow-lg uppercase tracking-wider relative z-10"
               >
                 Join us on the journey
               </button>
             </div>
-            <div className="absolute -bottom-0 -right-0 w-full h-full border-2 border-[#a52424] rounded-3xl opacity-20 pointer-events-none"></div>
+            <div className="absolute -bottom-0 -right-0 w-full h-full border-2 border-church-red rounded-3xl opacity-20 pointer-events-none"></div>
           </div>
         </div>
       </div>

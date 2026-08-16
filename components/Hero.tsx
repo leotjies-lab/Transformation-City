@@ -18,13 +18,16 @@ const Hero: React.FC = () => {
       </div>
 
       <div className="relative z-10 text-center px-4 sm:px-6 max-w-4xl mx-auto">
-        <h1 className="text-3xl sm:text-5xl md:text-6xl lg:text-7xl font-black text-white mb-6 tracking-tight leading-none sm:leading-tight">
-          <span className="font-montserrat">ORDINARY PEOPLE</span>
-          <br />
-          <span className="font-amsterdam text-church-red font-normal normal-case text-4xl sm:text-6xl md:text-7xl lg:text-8xl inline-block mx-1.5 sm:mx-2 tracking-normal align-middle">
+        <h1 className="text-3xl sm:text-5xl md:text-6xl lg:text-7xl text-white mb-6 leading-tight sm:leading-none">
+          <span className="font-hero-light font-light tracking-[0.12em] sm:tracking-[0.18em] uppercase text-2xl sm:text-4xl md:text-5xl lg:text-6xl block text-gray-100">
+            Ordinary People
+          </span>
+          <span className="font-hero-brush text-church-red font-bold normal-case text-5xl sm:text-7xl md:text-8xl lg:text-9xl block my-1 sm:my-2 tracking-wide transform -rotate-1 drop-shadow-lg">
             Extraordinary
           </span>
-          <span className="font-montserrat">LIVES</span>
+          <span className="font-hero-light font-light tracking-[0.12em] sm:tracking-[0.18em] uppercase text-2xl sm:text-4xl md:text-5xl lg:text-6xl block text-gray-100">
+            Lives
+          </span>
         </h1>
         <p className="text-base sm:text-xl md:text-2xl text-gray-200 mb-8 sm:mb-10 font-light max-w-2xl mx-auto">
           Welcome to Transformation City Church. A community where your journey with God and your relationships with others are at the heart of everything we do.

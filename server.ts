@@ -9,6 +9,17 @@ const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json());
 
+// Enable CORS for custom domain & hosting compatibility
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 // Transporter configuration helper for Hostinger SMTP
 function getSmtpCredentials() {
   return {
@@ -55,6 +66,34 @@ app.get("/api/smtp-status", (req, res) => {
   });
 });
 
+// Helper to determine file category and MIME types
+function getFileCategoryAndMime(fileName: string, rawMime?: string | null): { category: 'audio' | 'notes' | 'video' | 'other'; mimeType: string; isAudio: boolean; isNotes: boolean } {
+  const lower = (fileName || '').toLowerCase();
+  
+  if (lower.endsWith('.mp3')) return { category: 'audio', mimeType: 'audio/mpeg', isAudio: true, isNotes: false };
+  if (lower.endsWith('.m4a')) return { category: 'audio', mimeType: 'audio/m4a', isAudio: true, isNotes: false };
+  if (lower.endsWith('.wav')) return { category: 'audio', mimeType: 'audio/wav', isAudio: true, isNotes: false };
+  if (lower.endsWith('.aac')) return { category: 'audio', mimeType: 'audio/aac', isAudio: true, isNotes: false };
+  if (lower.endsWith('.ogg') || lower.endsWith('.oga')) return { category: 'audio', mimeType: 'audio/ogg', isAudio: true, isNotes: false };
+  if (lower.endsWith('.flac')) return { category: 'audio', mimeType: 'audio/flac', isAudio: true, isNotes: false };
+  if (lower.endsWith('.wma')) return { category: 'audio', mimeType: 'audio/x-ms-wma', isAudio: true, isNotes: false };
+
+  // Notes & Documents
+  if (lower.endsWith('.pdf')) return { category: 'notes', mimeType: 'application/pdf', isAudio: false, isNotes: true };
+  if (lower.endsWith('.docx')) return { category: 'notes', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', isAudio: false, isNotes: true };
+  if (lower.endsWith('.doc')) return { category: 'notes', mimeType: 'application/msword', isAudio: false, isNotes: true };
+  if (lower.endsWith('.txt')) return { category: 'notes', mimeType: 'text/plain; charset=utf-8', isAudio: false, isNotes: true };
+  if (lower.endsWith('.pptx')) return { category: 'notes', mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', isAudio: false, isNotes: true };
+  if (lower.endsWith('.ppt')) return { category: 'notes', mimeType: 'application/vnd.ms-powerpoint', isAudio: false, isNotes: true };
+  if (lower.endsWith('.rtf')) return { category: 'notes', mimeType: 'application/rtf', isAudio: false, isNotes: true };
+
+  // Video
+  if (lower.endsWith('.mp4')) return { category: 'video', mimeType: 'video/mp4', isAudio: false, isNotes: false };
+  if (lower.endsWith('.mov')) return { category: 'video', mimeType: 'video/quicktime', isAudio: false, isNotes: false };
+
+  return { category: 'other', mimeType: rawMime || 'application/octet-stream', isAudio: false, isNotes: false };
+}
+
 // Helper to fetch files from Google Drive folder
 async function getDriveFolderFiles(folderId: string = "1qi4li-RY2flBnRt6wLfnpXpu4JeY_yVM"): Promise<any[]> {
   const apiKey = process.env.GOOGLE_DRIVE_API_KEY;
@@ -71,7 +110,16 @@ async function getDriveFolderFiles(folderId: string = "1qi4li-RY2flBnRt6wLfnpXpu
       if (driveRes.ok) {
         const driveData = await driveRes.json();
         if (Array.isArray(driveData.files) && driveData.files.length > 0) {
-          files = driveData.files;
+          files = driveData.files.map((f: any) => {
+            const meta = getFileCategoryAndMime(f.name, f.mimeType);
+            return {
+              ...f,
+              fileCategory: meta.category,
+              mimeType: meta.mimeType,
+              isAudio: meta.isAudio,
+              isNotes: meta.isNotes,
+            };
+          });
         }
       }
     } catch (e) {
@@ -98,8 +146,8 @@ async function getDriveFolderFiles(folderId: string = "1qi4li-RY2flBnRt6wLfnpXpu
           const rowContent = rowMatch[2];
 
           const nameMatch = rowContent.match(/aria-label=["']([^"']+)["']/) ||
-                            rowContent.match(/["']>([^<]+\.(?:mp3|m4a|wav|aac|ogg|wma|pdf|docx?|txt|jpg|png))</i) ||
-                            rowContent.match(/([^\s<>]+\.(?:mp3|m4a|wav|aac|ogg|wma))/i);
+                            rowContent.match(/["']>([^<]+\.(?:mp3|m4a|wav|aac|ogg|wma|pdf|docx?|txt|pptx?|rtf|jpg|png))</i) ||
+                            rowContent.match(/([^\s<>]+\.(?:mp3|m4a|wav|aac|ogg|wma|pdf|docx?|txt|pptx?|rtf))/i);
 
           let rawName = nameMatch ? nameMatch[1] : '';
           let cleanName = rawName
@@ -108,7 +156,7 @@ async function getDriveFolderFiles(folderId: string = "1qi4li-RY2flBnRt6wLfnpXpu
             .trim();
 
           if (!cleanName) {
-            cleanName = `Sermon Recording (${fileId.substring(0, 8)})`;
+            cleanName = `Collateral File (${fileId.substring(0, 8)})`;
           }
 
           let createdTime = new Date().toISOString();
@@ -117,11 +165,16 @@ async function getDriveFolderFiles(folderId: string = "1qi4li-RY2flBnRt6wLfnpXpu
             createdTime = `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}T10:00:00.000Z`;
           }
 
+          const meta = getFileCategoryAndMime(cleanName);
+
           if (fileId && !fileMap.has(fileId)) {
             fileMap.set(fileId, {
               id: fileId,
               name: cleanName,
-              mimeType: cleanName.toLowerCase().endsWith('.mp3') ? 'audio/mpeg' : 'audio/m4a',
+              mimeType: meta.mimeType,
+              fileCategory: meta.category,
+              isAudio: meta.isAudio,
+              isNotes: meta.isNotes,
               createdTime,
               webViewLink: `https://drive.google.com/file/d/${fileId}/view`,
               webContentLink: `https://docs.google.com/uc?export=download&id=${fileId}`
@@ -129,7 +182,7 @@ async function getDriveFolderFiles(folderId: string = "1qi4li-RY2flBnRt6wLfnpXpu
           }
         }
 
-        const driveItemsRegex = /\[["']([a-zA-Z0-9_-]{28,35})["']\s*,\s*\[?["']([^"']+\.(?:mp3|m4a|wav|aac|ogg|wma|mp4|mov))["']/gi;
+        const driveItemsRegex = /\[["']([a-zA-Z0-9_-]{28,35})["']\s*,\s*\[?["']([^"']+\.(?:mp3|m4a|wav|aac|ogg|wma|pdf|docx?|txt|pptx?|rtf|mp4|mov))["']/gi;
         let itemMatch;
         while ((itemMatch = driveItemsRegex.exec(html)) !== null) {
           const fileId = itemMatch[1];
@@ -145,11 +198,16 @@ async function getDriveFolderFiles(folderId: string = "1qi4li-RY2flBnRt6wLfnpXpu
             createdTime = `${dateMatch[1]}-${dateMatch[2]}-${dateMatch[3]}T10:00:00.000Z`;
           }
 
+          const meta = getFileCategoryAndMime(cleanName);
+
           if (!fileMap.has(fileId)) {
             fileMap.set(fileId, {
               id: fileId,
               name: cleanName,
-              mimeType: cleanName.toLowerCase().endsWith('.mp3') ? 'audio/mpeg' : 'audio/m4a',
+              mimeType: meta.mimeType,
+              fileCategory: meta.category,
+              isAudio: meta.isAudio,
+              isNotes: meta.isNotes,
               createdTime,
               webViewLink: `https://drive.google.com/file/d/${fileId}/view`,
               webContentLink: `https://docs.google.com/uc?export=download&id=${fileId}`
@@ -174,6 +232,8 @@ app.get("/api/drive/files", async (req, res) => {
 
   try {
     const files = await getDriveFolderFiles(folderId);
+    const audioFiles = files.filter(f => f.isAudio || f.fileCategory === 'audio');
+    const notesFiles = files.filter(f => f.isNotes || f.fileCategory === 'notes');
 
     return res.json({
       success: true,
@@ -181,7 +241,9 @@ app.get("/api/drive/files", async (req, res) => {
       folderUrl: driveFolderUrl,
       account: "tccmedia123@gmail.com",
       files,
-      message: files.length > 0 ? `Loaded ${files.length} audio file(s) from Google Drive` : "Connected to Google Drive folder"
+      audioFiles,
+      notesFiles,
+      message: files.length > 0 ? `Loaded ${files.length} collateral file(s) (${audioFiles.length} audio, ${notesFiles.length} notes) from Google Drive` : "Connected to Google Drive folder"
     });
   } catch (err: any) {
     return res.json({
@@ -190,6 +252,8 @@ app.get("/api/drive/files", async (req, res) => {
       folderUrl: driveFolderUrl,
       account: "tccmedia123@gmail.com",
       files: [],
+      audioFiles: [],
+      notesFiles: [],
       error: err.message
     });
   }
@@ -432,6 +496,183 @@ app.get("/api/drive/download/:fileId", async (req, res) => {
   } catch (err: any) {
     console.error("Audio download proxy error:", err);
     return res.status(500).send("Server audio download error");
+  }
+});
+
+// Google Drive Sermon Notes View Proxy (Inline viewing for PDFs and Docs)
+app.get("/api/drive/notes/view/:fileId", async (req, res) => {
+  const { fileId } = req.params;
+  const filename = (req.query.filename as string) || "sermon-notes.pdf";
+
+  if (!fileId) {
+    return res.status(400).send("File ID required");
+  }
+
+  try {
+    const notesRes = await fetchDriveAudioStream(fileId);
+    if (!notesRes) {
+      return res.status(404).json({ error: "Unable to load sermon notes from Google Drive" });
+    }
+
+    const rawContentType = notesRes.headers.get("content-type");
+    if (rawContentType && rawContentType.includes("html") && !filename.endsWith(".html")) {
+      return res.status(404).json({ error: "Google Drive returned an HTML page instead of notes document" });
+    }
+
+    const meta = getFileCategoryAndMime(filename, rawContentType);
+    res.setHeader("Content-Type", meta.mimeType);
+    res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+    res.setHeader("Access-Control-Allow-Origin", "*");
+
+    if (notesRes.headers.get("content-length")) {
+      res.setHeader("Content-Length", notesRes.headers.get("content-length")!);
+    }
+
+    res.status(notesRes.status);
+    if (notesRes.body) {
+      return Readable.fromWeb(notesRes.body as any).pipe(res);
+    } else {
+      return res.end();
+    }
+  } catch (err: any) {
+    console.error("Notes view proxy error:", err);
+    return res.status(500).send("Server notes view error");
+  }
+});
+
+// Google Drive Sermon Notes Download Proxy (Attachment download for PDFs and Docs)
+app.get("/api/drive/notes/download/:fileId", async (req, res) => {
+  const { fileId } = req.params;
+  const filename = (req.query.filename as string) || "sermon-notes.pdf";
+
+  if (!fileId) {
+    return res.status(400).send("File ID required");
+  }
+
+  try {
+    const notesRes = await fetchDriveAudioStream(fileId);
+    if (!notesRes) {
+      return res.status(404).send("Unable to download sermon notes from Google Drive");
+    }
+
+    const rawContentType = notesRes.headers.get("content-type");
+    if (rawContentType && rawContentType.includes("html") && !filename.endsWith(".html")) {
+      return res.status(404).send("Google Drive returned HTML instead of document file");
+    }
+
+    const meta = getFileCategoryAndMime(filename, rawContentType);
+    const sanitizedFilename = filename.replace(/[^\w\s.-]/g, "").trim();
+
+    res.setHeader("Content-Type", meta.mimeType);
+    res.setHeader("Content-Disposition", `attachment; filename="${sanitizedFilename}"`);
+    res.setHeader("Access-Control-Allow-Origin", "*");
+
+    if (notesRes.headers.get("content-length")) {
+      res.setHeader("Content-Length", notesRes.headers.get("content-length")!);
+    }
+
+    if (notesRes.body) {
+      return Readable.fromWeb(notesRes.body as any).pipe(res);
+    } else {
+      return res.end();
+    }
+  } catch (err: any) {
+    console.error("Notes download proxy error:", err);
+    return res.status(500).send("Server notes download error");
+  }
+});
+
+// Google Drive Sermon Notes View Proxy by Exact Filename
+app.get("/api/drive/notes/view-by-name", async (req, res) => {
+  const fileName = req.query.filename as string;
+  if (!fileName) {
+    return res.status(400).send("Filename parameter required");
+  }
+
+  try {
+    const files = await getDriveFolderFiles();
+    const cleanQueryName = fileName.trim().toLowerCase();
+
+    const targetFile = files.find(f => {
+      const name = f.name.trim().toLowerCase();
+      return name === cleanQueryName || 
+             name.replace(/\.[^/.]+$/, "") === cleanQueryName.replace(/\.[^/.]+$/, "");
+    });
+
+    if (targetFile && targetFile.id) {
+      const notesRes = await fetchDriveAudioStream(targetFile.id);
+      if (notesRes) {
+        const rawContentType = notesRes.headers.get("content-type");
+        const meta = getFileCategoryAndMime(targetFile.name || fileName, rawContentType);
+        
+        res.setHeader("Content-Type", meta.mimeType);
+        res.setHeader("Content-Disposition", `inline; filename="${targetFile.name || fileName}"`);
+        res.setHeader("Access-Control-Allow-Origin", "*");
+
+        if (notesRes.headers.get("content-length")) {
+          res.setHeader("Content-Length", notesRes.headers.get("content-length")!);
+        }
+
+        res.status(notesRes.status);
+        if (notesRes.body) {
+          return Readable.fromWeb(notesRes.body as any).pipe(res);
+        } else {
+          return res.end();
+        }
+      }
+    }
+
+    return res.status(404).json({ error: `Notes file "${fileName}" not found in Google Drive folder` });
+  } catch (err: any) {
+    console.error("Notes view by name error:", err);
+    return res.status(500).send("Server notes view error");
+  }
+});
+
+// Google Drive Sermon Notes Download Proxy by Exact Filename
+app.get("/api/drive/notes/download-by-name", async (req, res) => {
+  const fileName = req.query.filename as string;
+  if (!fileName) {
+    return res.status(400).send("Filename parameter required");
+  }
+
+  try {
+    const files = await getDriveFolderFiles();
+    const cleanQueryName = fileName.trim().toLowerCase();
+
+    const targetFile = files.find(f => {
+      const name = f.name.trim().toLowerCase();
+      return name === cleanQueryName || 
+             name.replace(/\.[^/.]+$/, "") === cleanQueryName.replace(/\.[^/.]+$/, "");
+    });
+
+    if (targetFile && targetFile.id) {
+      const notesRes = await fetchDriveAudioStream(targetFile.id);
+      if (notesRes) {
+        const rawContentType = notesRes.headers.get("content-type");
+        const meta = getFileCategoryAndMime(targetFile.name || fileName, rawContentType);
+        const sanitizedFilename = (targetFile.name || fileName).replace(/[^\w\s.-]/g, "").trim();
+
+        res.setHeader("Content-Type", meta.mimeType);
+        res.setHeader("Content-Disposition", `attachment; filename="${sanitizedFilename}"`);
+        res.setHeader("Access-Control-Allow-Origin", "*");
+
+        if (notesRes.headers.get("content-length")) {
+          res.setHeader("Content-Length", notesRes.headers.get("content-length")!);
+        }
+
+        if (notesRes.body) {
+          return Readable.fromWeb(notesRes.body as any).pipe(res);
+        } else {
+          return res.end();
+        }
+      }
+    }
+
+    return res.status(404).send(`Notes file "${fileName}" not found in Google Drive folder`);
+  } catch (err: any) {
+    console.error("Notes download by name error:", err);
+    return res.status(500).send("Server notes download error");
   }
 });
 

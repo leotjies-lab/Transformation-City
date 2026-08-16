@@ -94,13 +94,11 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentView }) => {
                   onClick={(e) => handleLinkClick(e, item.href)}
                   className={`font-black text-xs xl:text-sm uppercase tracking-wider transition-colors whitespace-nowrap px-1 py-1 ${
                     isJoinUs
-                      ? isScrolled 
-                        ? 'text-[#a52424] hover:text-[#801b1b]' 
-                        : 'text-red-400 hover:text-red-300'
+                      ? 'text-church-red hover:text-red-700'
                       : isScrolled 
-                        ? 'text-gray-800 hover:text-[#d32f2f]' 
-                        : 'text-gray-100 hover:text-[#d32f2f]'
-                  } ${!isJoinUs && item.href.includes(currentView) && currentView !== 'home' ? 'text-[#d32f2f]' : ''}`}
+                        ? 'text-gray-800 hover:text-church-red' 
+                        : 'text-gray-100 hover:text-church-red'
+                  } ${!isJoinUs && item.href.includes(currentView) && currentView !== 'home' ? 'text-church-red' : ''}`}
                 >
                   {item.label}
                 </a>
@@ -135,9 +133,9 @@ const Navbar: React.FC<NavbarProps> = ({ onNavigate, currentView }) => {
                   onClick={(e) => handleLinkClick(e, item.href)}
                   className={`block px-4 py-2.5 font-black uppercase tracking-wider text-sm transition-colors ${
                     isJoinUs 
-                      ? 'text-[#a52424] hover:text-[#801b1b]' 
-                      : 'text-gray-800 hover:text-[#d32f2f]'
-                  } ${!isJoinUs && item.href.includes(currentView) && currentView !== 'home' ? 'text-[#d32f2f]' : ''}`}
+                      ? 'text-church-red hover:text-red-700' 
+                      : 'text-gray-800 hover:text-church-red'
+                  } ${!isJoinUs && item.href.includes(currentView) && currentView !== 'home' ? 'text-church-red' : ''}`}
                 >
                   {item.label}
                 </a>

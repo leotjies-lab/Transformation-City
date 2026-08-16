@@ -37,7 +37,11 @@ import {
   BookOpen,
   CheckSquare,
   Lock,
-  Archive
+  Archive,
+  FileText,
+  Video,
+  FileDown,
+  Paperclip
 } from 'lucide-react';
 
 interface WebsiteCollateralManagerProps {
@@ -46,6 +50,14 @@ interface WebsiteCollateralManagerProps {
 
 const GOOGLE_DRIVE_FOLDER_ID = "1qi4li-RY2flBnRt6wLfnpXpu4JeY_yVM";
 const GOOGLE_DRIVE_FOLDER_URL = `https://drive.google.com/drive/folders/${GOOGLE_DRIVE_FOLDER_ID}`;
+
+// Helper to extract YouTube embed URL or ID
+export const getYouTubeVideoId = (url?: string): string | null => {
+  if (!url) return null;
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
+};
 
 const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adminEmail }) => {
   const [sermonsList, setSermonsList] = useState<Sermon[]>([]);
@@ -56,7 +68,16 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
   const [loadingDrive, setLoadingDrive] = useState(false);
   const [driveError, setDriveError] = useState('');
   const [driveSuccess, setDriveSuccess] = useState('');
-  const [driveFilter, setDriveFilter] = useState<'uncataloged' | 'all' | 'cataloged'>('uncataloged');
+  const [driveFilter, setDriveFilter] = useState<'uncataloged' | 'all' | 'cataloged' | 'notes'>('uncataloged');
+
+  // Separate Drive Audio Files and Notes Files
+  const driveAudioFiles = useMemo(() => {
+    return driveFiles.filter(f => f.isAudio || f.fileCategory === 'audio' || (!f.isNotes && f.name.match(/\.(mp3|m4a|wav|aac|ogg|wma)$/i)));
+  }, [driveFiles]);
+
+  const driveNotesFiles = useMemo(() => {
+    return driveFiles.filter(f => f.isNotes || f.fileCategory === 'notes' || f.name.match(/\.(pdf|docx?|txt|pptx?|rtf)$/i));
+  }, [driveFiles]);
 
   // Helper to determine if a Google Drive audio file is already cataloged in Firestore
   const isDriveFileCataloged = (file: DriveAudioFile, sermons: Sermon[]): boolean => {
@@ -68,13 +89,15 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
       if (sermon.driveFileId && sermon.driveFileId === file.id) return true;
       if (sermon.audioUrl && sermon.audioUrl.includes(file.id)) return true;
       if (sermon.downloadUrl && sermon.downloadUrl.includes(file.id)) return true;
+      if (sermon.notesDriveFileId && sermon.notesDriveFileId === file.id) return true;
       
       // 2. Exact drive filename match
       if (sermon.driveFileName && sermon.driveFileName.trim().toLowerCase() === file.name.trim().toLowerCase()) return true;
+      if (sermon.notesFileName && sermon.notesFileName.trim().toLowerCase() === file.name.trim().toLowerCase()) return true;
 
       // 3. Normalized filename vs title exact equality comparison
       const cleanFileName = file.name
-        .replace(/\.[^/.]+$/, "") // strip extension (.mp3)
+        .replace(/\.[^/.]+$/, "") // strip extension (.mp3, .pdf)
         .replace(/^(20\d{2})[-_](0[1-9]|1[0-2])[-_](0[1-9]|[12]\d|3[01])[-_]?/i, "") // strip leading date prefix
         .replace(/[-_]/g, " ")
         .replace(/\s+/g, " ")
@@ -95,19 +118,30 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
     });
   };
 
+  // Find which active sermon is already attached to a notes file
+  const getSermonAttachedToNotesFile = (file: DriveAudioFile): Sermon | undefined => {
+    return sermonsList.find((s) => {
+      if (s.isArchived || s.status === 'Archived' || s.title === 'Archived') return false;
+      if (s.notesDriveFileId && s.notesDriveFileId === file.id) return true;
+      if (s.notesFileName && s.notesFileName.trim().toLowerCase() === file.name.trim().toLowerCase()) return true;
+      return false;
+    });
+  };
+
   const uncatalogedDriveFiles = useMemo(() => {
-    return driveFiles.filter((file) => !isDriveFileCataloged(file, sermonsList));
-  }, [driveFiles, sermonsList]);
+    return driveAudioFiles.filter((file) => !isDriveFileCataloged(file, sermonsList));
+  }, [driveAudioFiles, sermonsList]);
 
   const catalogedDriveFiles = useMemo(() => {
-    return driveFiles.filter((file) => isDriveFileCataloged(file, sermonsList));
-  }, [driveFiles, sermonsList]);
+    return driveAudioFiles.filter((file) => isDriveFileCataloged(file, sermonsList));
+  }, [driveAudioFiles, sermonsList]);
 
   const displayedDriveFiles = useMemo(() => {
     if (driveFilter === 'uncataloged') return uncatalogedDriveFiles;
     if (driveFilter === 'cataloged') return catalogedDriveFiles;
+    if (driveFilter === 'notes') return driveNotesFiles;
     return driveFiles;
-  }, [driveFilter, uncatalogedDriveFiles, catalogedDriveFiles, driveFiles]);
+  }, [driveFilter, uncatalogedDriveFiles, catalogedDriveFiles, driveNotesFiles, driveFiles]);
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState('');
@@ -115,6 +149,11 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
 
   // Multi-select state for bulk actions
   const [selectedSermonIds, setSelectedSermonIds] = useState<string[]>([]);
+
+  // Notes Direct Selection Modals
+  const [selectNotesForSermon, setSelectNotesForSermon] = useState<Sermon | null>(null);
+  const [attachNotesModalFile, setAttachNotesModalFile] = useState<DriveAudioFile | null>(null);
+  const [selectedTargetSermonId, setSelectedTargetSermonId] = useState<string>('');
 
   // Custom Confirmation Modal state
   const [confirmModal, setConfirmModal] = useState<{
@@ -146,6 +185,13 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
   const [downloadUrl, setDownloadUrl] = useState('');
   const [driveFileId, setDriveFileId] = useState('');
   const [driveFileName, setDriveFileName] = useState('');
+  // YouTube integration
+  const [youtubeUrl, setYoutubeUrl] = useState('');
+  // Sermon notes integration
+  const [notesDriveFileId, setNotesDriveFileId] = useState('');
+  const [notesFileName, setNotesFileName] = useState('');
+  const [notesUrl, setNotesUrl] = useState('');
+  const [notesFileType, setNotesFileType] = useState('pdf');
   const [isPublished, setIsPublished] = useState(true);
 
   const [saving, setSaving] = useState(false);
@@ -222,23 +268,35 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
     }
   }, [driveFiles]);
 
-  // Fetch audio files from Google Drive backend API
+  // Fetch audio and notes files from Google Drive backend API
   const fetchDriveFiles = async () => {
     setLoadingDrive(true);
     setDriveError('');
     try {
       const res = await fetch(`/api/drive/files?folderId=${GOOGLE_DRIVE_FOLDER_ID}`);
+      
+      if (!res.ok) {
+        if (res.status === 404) {
+          throw new Error('API route /api/drive/files returned 404 Not Found. Please ensure the Node.js backend server (dist/server.cjs) is running on your web host and routing /api requests.');
+        } else if (res.status >= 500) {
+          throw new Error(`Server returned HTTP ${res.status}. Check your backend server logs on the host.`);
+        } else {
+          throw new Error(`HTTP ${res.status}: Failed to reach backend API.`);
+        }
+      }
+
       const data = await res.json();
       if (data.success && Array.isArray(data.files)) {
         setDriveFiles(data.files);
-        setDriveSuccess(`Loaded ${data.files.length} file(s) from tccmedia123 Google Drive`);
+        setDriveSuccess(data.message || `Loaded ${data.files.length} file(s) from tccmedia123 Google Drive`);
         if (sermonsList.length > 0) {
           syncAndAutoHideMissingDriveFiles(data.files, sermonsList);
         }
       } else {
-        setDriveError(data.error || 'Connected to Google Drive folder.');
+        setDriveError(data.error || 'Unable to load files from Google Drive folder.');
       }
     } catch (err: any) {
+      console.warn('Drive files fetch error:', err);
       setDriveError(err.message || 'Error communicating with Google Drive server route.');
     } finally {
       setLoadingDrive(false);
@@ -249,29 +307,95 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
     fetchDriveFiles();
   }, []);
 
+  // Helper to find a matching notes file for an audio file (or vice versa) in Google Drive
+  const findCompanionNotesFile = (audioFileName: string): DriveAudioFile | undefined => {
+    if (!audioFileName) return undefined;
+    const dateMatch = audioFileName.match(/(20\d{2})[-_](0[1-9]|1[0-2])[-_](0[1-9]|[12]\d|3[01])/);
+    const audioClean = audioFileName.replace(/\.[^/.]+$/, '').toLowerCase().replace(/[-_]/g, ' ');
+
+    return driveNotesFiles.find(nFile => {
+      // 1. Check matching date
+      if (dateMatch && nFile.name.includes(dateMatch[0])) return true;
+      // 2. Check matching title words
+      const notesClean = nFile.name.replace(/\.[^/.]+$/, '').toLowerCase().replace(/[-_]/g, ' ');
+      if (notesClean.includes('notes') && audioClean.split(' ').some(w => w.length > 4 && notesClean.includes(w))) return true;
+      return false;
+    });
+  };
+
   // Pre-fill modal form from selected Google Drive File
   const handleSelectDriveFile = (file: DriveAudioFile) => {
     setEditingSermon(null);
-    setDriveFileId(file.id);
-    setDriveFileName(file.name);
 
-    // Derive clean display title from file name (stripping dates and extension)
-    const cleanDisplayTitle = file.name
-      .replace(/\.[^/.]+$/, "")
-      .replace(/^(20\d{2})[-_](0[1-9]|1[0-2])[-_](0[1-9]|[12]\d|3[01])[-_]?/i, "")
-      .replace(/[-_]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+    if (file.isNotes || file.fileCategory === 'notes' || file.name.match(/\.(pdf|docx?|txt|pptx?)$/i)) {
+      // It's a notes file!
+      setNotesDriveFileId(file.id);
+      setNotesFileName(file.name);
+      setNotesUrl(`/api/drive/notes/view/${file.id}?filename=${encodeURIComponent(file.name)}`);
+      setNotesFileType(file.name.toLowerCase().endsWith('.docx') ? 'docx' : file.name.toLowerCase().endsWith('.doc') ? 'doc' : file.name.toLowerCase().endsWith('.txt') ? 'txt' : 'pdf');
 
-    setTitle(cleanDisplayTitle || file.name);
+      // Check if there's a companion audio file in Drive
+      const dateMatch = file.name.match(/(20\d{2})[-_](0[1-9]|1[0-2])[-_](0[1-9]|[12]\d|3[01])/);
+      const companionAudio = driveAudioFiles.find(aFile => dateMatch && aFile.name.includes(dateMatch[0]));
+      if (companionAudio) {
+        setDriveFileId(companionAudio.id);
+        setDriveFileName(companionAudio.name);
+        setAudioUrl(`/api/drive/stream/${companionAudio.id}`);
+        setDownloadUrl(`/api/drive/download/${companionAudio.id}?filename=${encodeURIComponent(companionAudio.name)}`);
+      } else {
+        setDriveFileId('');
+        setDriveFileName('');
+        setAudioUrl('');
+        setDownloadUrl('');
+      }
 
-    // Direct Google Drive playback/download links
-    const streamProxyUrl = `/api/drive/stream/${file.id}`;
-    const directDlUrl = `/api/drive/download/${file.id}?filename=${encodeURIComponent(file.name)}`;
+      const cleanDisplayTitle = file.name
+        .replace(/\.[^/.]+$/, "")
+        .replace(/^(20\d{2})[-_](0[1-9]|1[0-2])[-_](0[1-9]|[12]\d|3[01])[-_]?/i, "")
+        .replace(/(sermon|notes|study)/gi, "")
+        .replace(/[-_]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
 
-    setAudioUrl(streamProxyUrl);
-    setDownloadUrl(directDlUrl);
-    setSermonDate(file.createdTime ? file.createdTime.split('T')[0] : new Date().toISOString().split('T')[0]);
+      setTitle(cleanDisplayTitle || file.name);
+      setSermonDate(file.createdTime ? file.createdTime.split('T')[0] : new Date().toISOString().split('T')[0]);
+    } else {
+      // It's an audio file
+      setDriveFileId(file.id);
+      setDriveFileName(file.name);
+
+      // Direct Google Drive playback/download links
+      const streamProxyUrl = `/api/drive/stream/${file.id}`;
+      const directDlUrl = `/api/drive/download/${file.id}?filename=${encodeURIComponent(file.name)}`;
+      setAudioUrl(streamProxyUrl);
+      setDownloadUrl(directDlUrl);
+
+      // Check for companion notes in the same folder!
+      const companionNotes = findCompanionNotesFile(file.name);
+      if (companionNotes) {
+        setNotesDriveFileId(companionNotes.id);
+        setNotesFileName(companionNotes.name);
+        setNotesUrl(`/api/drive/notes/view/${companionNotes.id}?filename=${encodeURIComponent(companionNotes.name)}`);
+        setNotesFileType(companionNotes.name.toLowerCase().endsWith('.docx') ? 'docx' : 'pdf');
+      } else {
+        setNotesDriveFileId('');
+        setNotesFileName('');
+        setNotesUrl('');
+      }
+
+      // Derive clean display title from file name (stripping dates and extension)
+      const cleanDisplayTitle = file.name
+        .replace(/\.[^/.]+$/, "")
+        .replace(/^(20\d{2})[-_](0[1-9]|1[0-2])[-_](0[1-9]|[12]\d|3[01])[-_]?/i, "")
+        .replace(/[-_]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      setTitle(cleanDisplayTitle || file.name);
+      setSermonDate(file.createdTime ? file.createdTime.split('T')[0] : new Date().toISOString().split('T')[0]);
+    }
+
+    setYoutubeUrl('');
     setIsPublished(true);
     setIsModalOpen(true);
   };
@@ -291,6 +415,11 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
     setDownloadUrl('');
     setDriveFileId('');
     setDriveFileName('');
+    setYoutubeUrl('');
+    setNotesDriveFileId('');
+    setNotesFileName('');
+    setNotesUrl('');
+    setNotesFileType('pdf');
     setIsPublished(true);
     setIsModalOpen(true);
   };
@@ -309,6 +438,11 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
     setDownloadUrl(sermon.downloadUrl || '');
     setDriveFileId(sermon.driveFileId || '');
     setDriveFileName(sermon.driveFileName || '');
+    setYoutubeUrl(sermon.youtubeUrl || '');
+    setNotesDriveFileId(sermon.notesDriveFileId || '');
+    setNotesFileName(sermon.notesFileName || '');
+    setNotesUrl(sermon.notesUrl || '');
+    setNotesFileType(sermon.notesFileType || 'pdf');
     setIsPublished(sermon.isPublished ?? true);
     setIsModalOpen(true);
   };
@@ -322,7 +456,7 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
     setStatusMsg('');
 
     try {
-      const payload = {
+      const payload: Partial<Sermon> = {
         title: title.trim(),
         speaker: speaker.trim() || 'Pastor Leon Louw',
         sermonDate,
@@ -332,10 +466,18 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
         description: description.trim() || '',
         scripture: scripture.trim() || '',
         audioUrl: audioUrl.trim() || (driveFileId ? `/api/drive/stream/${driveFileId}` : ''),
-        downloadUrl: downloadUrl.trim() || (driveFileId ? `https://docs.google.com/uc?export=download&id=${driveFileId}` : ''),
-        driveFileId,
-        driveFileName,
+        downloadUrl: downloadUrl.trim() || (driveFileId ? `/api/drive/download/${driveFileId}?filename=${encodeURIComponent(driveFileName || 'sermon.mp3')}` : ''),
+        driveFileId: driveFileId.trim(),
+        driveFileName: driveFileName.trim(),
         driveWebViewLink: GOOGLE_DRIVE_FOLDER_URL,
+        // YouTube video URL
+        youtubeUrl: youtubeUrl.trim(),
+        // Sermon notes
+        notesDriveFileId: notesDriveFileId.trim(),
+        notesFileName: notesFileName.trim(),
+        notesUrl: notesUrl.trim() || (notesDriveFileId ? `/api/drive/notes/view/${notesDriveFileId}?filename=${encodeURIComponent(notesFileName || 'sermon-notes.pdf')}` : ''),
+        notesDownloadUrl: notesDriveFileId ? `/api/drive/notes/download/${notesDriveFileId}?filename=${encodeURIComponent(notesFileName || 'sermon-notes.pdf')}` : notesUrl.trim(),
+        notesFileType: notesFileType || (notesFileName.toLowerCase().endsWith('.docx') ? 'docx' : 'pdf'),
         isPublished,
         updatedAt: new Date().toISOString(),
       };
@@ -377,6 +519,54 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
     }
   };
 
+  // Quick attach notes to a specific sermon directly
+  const handleQuickAttachNotes = async (sermonId: string, notesFile: DriveAudioFile) => {
+    setSaving(true);
+    setStatusMsg('');
+    try {
+      const fileExt = notesFile.name.toLowerCase().endsWith('.docx') ? 'docx' : notesFile.name.toLowerCase().endsWith('.doc') ? 'doc' : notesFile.name.toLowerCase().endsWith('.txt') ? 'txt' : 'pdf';
+      await updateDoc(doc(db, 'sermons', sermonId), {
+        notesDriveFileId: notesFile.id,
+        notesFileName: notesFile.name,
+        notesUrl: `/api/drive/notes/view/${notesFile.id}?filename=${encodeURIComponent(notesFile.name)}`,
+        notesDownloadUrl: `/api/drive/notes/download/${notesFile.id}?filename=${encodeURIComponent(notesFile.name)}`,
+        notesFileType: fileExt,
+        updatedAt: new Date().toISOString()
+      });
+      setStatusMsg(`Successfully attached notes "${notesFile.name}" to sermon.`);
+      setSelectNotesForSermon(null);
+      setAttachNotesModalFile(null);
+      setSelectedTargetSermonId('');
+    } catch (err: any) {
+      console.error('Error attaching notes:', err);
+      setStatusMsg(`Failed to attach notes: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Quick detach notes from a sermon
+  const handleQuickDetachNotes = async (sermonId: string) => {
+    setSaving(true);
+    setStatusMsg('');
+    try {
+      await updateDoc(doc(db, 'sermons', sermonId), {
+        notesDriveFileId: '',
+        notesFileName: '',
+        notesUrl: '',
+        notesDownloadUrl: '',
+        notesFileType: 'pdf',
+        updatedAt: new Date().toISOString()
+      });
+      setStatusMsg('Successfully detached notes from sermon.');
+    } catch (err: any) {
+      console.error('Error detaching notes:', err);
+      setStatusMsg(`Failed to detach notes: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // Helper archive payload to strip all file metadata & lock status
   const archiveSermonPayload = {
     title: 'Archived',
@@ -391,6 +581,11 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
     driveFileName: '',
     audioUrl: '',
     downloadUrl: '',
+    youtubeUrl: '',
+    notesDriveFileId: '',
+    notesFileName: '',
+    notesUrl: '',
+    notesDownloadUrl: '',
     driveWebViewLink: '',
     fileSize: '',
     isPublished: false,
@@ -505,7 +700,7 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
     }
   };
 
-  // Filtered Active Sermons (Archived items are completely excluded)
+  // Filtered Active Sermons
   const filteredSermons = activeSermons.filter((s) => {
     const matchesQuery = 
       s.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -520,6 +715,8 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
     return matchesQuery && matchesStatus;
   });
 
+  const parsedYoutubeId = useMemo(() => getYouTubeVideoId(youtubeUrl), [youtubeUrl]);
+
   return (
     <div className="space-y-8">
       
@@ -533,18 +730,27 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
             <div className="space-y-1">
               <div className="flex items-center space-x-2 text-xs font-bold text-red-400 uppercase tracking-widest">
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>Website Media & Audio Collateral</span>
+                <span>Website Media, Sermons & Collateral</span>
               </div>
               <h2 className="text-2xl font-black text-white uppercase tracking-tight">
                 Manage Website Collateral & Sermons
               </h2>
               <p className="text-xs text-gray-300 max-w-2xl leading-relaxed font-normal">
-                Manage audio recordings from Google Drive <strong className="text-white font-mono">(tccmedia123@gmail.com)</strong>, set sermon metadata (title, date, speaker, theme), and control front-end visibility for church members.
+                Catalog audio recordings and sermon notes from Google Drive <strong className="text-white font-mono">(tccmedia123@gmail.com)</strong>, attach YouTube video links, set sermon metadata, and control front-end availability.
               </p>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            {/* Create New Sermon Button */}
+            <button
+              onClick={openNewSermonModal}
+              className="bg-[#d32f2f] hover:bg-red-700 text-white px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center space-x-2 shadow-lg cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add New Sermon</span>
+            </button>
+
             {/* Direct Link to Google Drive */}
             <a
               href={GOOGLE_DRIVE_FOLDER_URL}
@@ -553,21 +759,21 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
               className="bg-white/10 hover:bg-white/20 text-white border border-white/20 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center space-x-2 shadow-lg"
             >
               <HardDrive className="w-4 h-4 text-amber-400" />
-              <span>Open tccmedia123 Google Drive</span>
+              <span>Open Google Drive</span>
               <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
             </a>
           </div>
         </div>
       </div>
 
-      {/* Google Drive Folder Files Listing */}
+      {/* Google Drive Folder Files Listing (Audio & Notes) */}
       <div className="bg-gray-900 border border-white/10 rounded-3xl p-6 space-y-4 shadow-xl">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 w-full">
             <div>
               <h3 className="text-sm font-black uppercase tracking-wider text-white flex items-center space-x-2">
                 <FolderKey className="w-4 h-4 text-amber-400" />
-                <span>Google Drive Audio Files Folder</span>
+                <span>Google Drive Media & Notes Folder</span>
               </h3>
               <p className="text-xs text-gray-400 font-mono">
                 Folder ID: {GOOGLE_DRIVE_FOLDER_ID} • Account: tccmedia123@gmail.com
@@ -580,13 +786,39 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
                 <button
                   type="button"
                   onClick={() => setDriveFilter('uncataloged')}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition-all text-[11px] ${
+                  className={`px-2.5 py-1 rounded-lg font-bold transition-all text-[11px] flex items-center space-x-1 ${
                     driveFilter === 'uncataloged'
                       ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                       : 'text-gray-400 hover:text-white'
                   }`}
                 >
-                  Uncataloged ({uncatalogedDriveFiles.length})
+                  <Headphones className="w-3 h-3 text-amber-400" />
+                  <span>Uncataloged Audio ({uncatalogedDriveFiles.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDriveFilter('notes')}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition-all text-[11px] flex items-center space-x-1 ${
+                    driveFilter === 'notes'
+                      ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  <FileText className="w-3 h-3 text-blue-400" />
+                  <span>Sermon Notes ({driveNotesFiles.length})</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setDriveFilter('cataloged')}
+                  className={`px-2.5 py-1 rounded-lg font-bold transition-all text-[11px] ${
+                    driveFilter === 'cataloged'
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                      : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  Cataloged Audio ({catalogedDriveFiles.length})
                 </button>
 
                 <button
@@ -599,18 +831,6 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
                   }`}
                 >
                   All ({driveFiles.length})
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setDriveFilter('cataloged')}
-                  className={`px-2.5 py-1 rounded-lg font-bold transition-all text-[11px] ${
-                    driveFilter === 'cataloged'
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                      : 'text-gray-400 hover:text-white'
-                  }`}
-                >
-                  Cataloged ({catalogedDriveFiles.length})
                 </button>
               </div>
 
@@ -632,15 +852,17 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
               <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
               <span>
                 {driveFilter === 'uncataloged'
-                  ? `Showing ${uncatalogedDriveFiles.length} uncataloged file(s) out of ${driveFiles.length} in Google Drive`
+                  ? `Showing ${uncatalogedDriveFiles.length} uncataloged audio file(s) out of ${driveAudioFiles.length}`
+                  : driveFilter === 'notes'
+                  ? `Found ${driveNotesFiles.length} sermon notes document(s) (PDF / Docs) in Drive`
                   : driveFilter === 'cataloged'
-                  ? `Showing ${catalogedDriveFiles.length} cataloged file(s) from Google Drive`
-                  : `Loaded ${driveFiles.length} file(s) from tccmedia123 Google Drive`}
+                  ? `Showing ${catalogedDriveFiles.length} cataloged audio file(s)`
+                  : `Loaded ${driveFiles.length} total file(s) from tccmedia123 Google Drive`}
               </span>
             </div>
-            {driveFilter === 'uncataloged' && catalogedDriveFiles.length > 0 && (
-              <span className="text-[10px] text-emerald-400 font-mono bg-emerald-500/20 px-2 py-0.5 rounded border border-emerald-500/30">
-                {catalogedDriveFiles.length} item(s) already cataloged
+            {driveNotesFiles.length > 0 && (
+              <span className="text-[10px] text-blue-300 font-mono bg-blue-500/20 px-2 py-0.5 rounded border border-blue-500/30">
+                📄 {driveNotesFiles.length} Notes Doc(s) Available
               </span>
             )}
           </div>
@@ -649,65 +871,154 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
         {displayedDriveFiles.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-2">
             {displayedDriveFiles.map((file) => {
+              const isNotesFile = file.isNotes || file.fileCategory === 'notes' || file.name.match(/\.(pdf|docx?|txt|pptx?)$/i);
               const cataloged = isDriveFileCataloged(file, sermonsList);
+              const attachedSermon = isNotesFile ? getSermonAttachedToNotesFile(file) : undefined;
+
               return (
                 <div 
                   key={file.id} 
                   className={`bg-gray-950 border rounded-2xl p-4 space-y-2 transition-all flex flex-col justify-between ${
-                    cataloged 
+                    attachedSermon || (!isNotesFile && cataloged)
                       ? 'border-emerald-500/20 opacity-85 hover:opacity-100' 
+                      : isNotesFile
+                      ? 'border-blue-500/20 hover:border-blue-500/40'
                       : 'border-white/10 hover:border-amber-500/40'
                   }`}
                 >
                   <div>
                     <div className="flex items-center justify-between">
-                      <span className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded border ${
-                        cataloged 
+                      <span className={`text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded border flex items-center space-x-1 ${
+                        attachedSermon
+                          ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/30'
+                          : isNotesFile
+                          ? 'text-blue-300 bg-blue-500/10 border-blue-500/20'
+                          : cataloged 
                           ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' 
                           : 'text-amber-400 bg-amber-500/10 border-amber-500/20'
                       }`}>
-                        {cataloged ? '✓ CATALOGED' : 'UNCATALOGED'}
+                        {isNotesFile ? (
+                          <>
+                            <FileText className="w-2.5 h-2.5" />
+                            <span>{attachedSermon ? '✓ NOTES ATTACHED' : 'SERMON NOTES'}</span>
+                          </>
+                        ) : cataloged ? (
+                          <span>✓ CATALOGED AUDIO</span>
+                        ) : (
+                          <span>UNCATALOGED AUDIO</span>
+                        )}
                       </span>
                       <span className="text-[10px] text-gray-400 font-mono">
                         {file.createdTime ? file.createdTime.split('T')[0] : 'Drive File'}
                       </span>
                     </div>
                     <h4 className="text-xs font-bold text-white truncate pt-1">{file.name}</h4>
+                    {attachedSermon && (
+                      <p className="text-[10px] text-emerald-400 truncate pt-0.5">
+                        Linked to: <strong>"{attachedSermon.title}"</strong>
+                      </p>
+                    )}
                   </div>
 
-                  {cataloged ? (
-                    <div className="w-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center space-x-1.5 mt-2">
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Already Cataloged</span>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleSelectDriveFile(file)}
-                      className="w-full bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center space-x-1.5 mt-2"
-                    >
-                      <Plus className="w-3.5 h-3.5 text-amber-400" />
-                      <span>Catalog as Sermon</span>
-                    </button>
-                  )}
+                  <div className="pt-2">
+                    {isNotesFile ? (
+                      attachedSermon ? (
+                        <div className="flex items-center space-x-1.5">
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(attachedSermon)}
+                            className="flex-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 py-1.5 rounded-xl text-xs font-bold transition-all text-center"
+                          >
+                            Edit Sermon
+                          </button>
+                          <a
+                            href={`/api/drive/notes/view/${file.id}?filename=${encodeURIComponent(file.name)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="bg-white/5 hover:bg-white/10 text-gray-300 p-1.5 rounded-xl border border-white/10 flex items-center justify-center"
+                            title="Preview Notes"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                          {attachedSermon.id && (
+                            <button
+                              type="button"
+                              onClick={() => attachedSermon.id && handleQuickDetachNotes(attachedSermon.id)}
+                              className="bg-red-500/10 hover:bg-red-500/20 text-red-300 px-2 py-1.5 rounded-xl border border-red-500/30 text-[10px] font-bold"
+                              title="Detach Notes"
+                            >
+                              Detach
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center space-x-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAttachNotesModalFile(file);
+                              setSelectedTargetSermonId(sermonsList.find(s => !s.isArchived)?.id || '');
+                            }}
+                            className="flex-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/30 py-1.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center space-x-1"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Select for Sermon</span>
+                          </button>
+                          <a
+                            href={`/api/drive/notes/view/${file.id}?filename=${encodeURIComponent(file.name)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="bg-white/5 hover:bg-white/10 text-gray-300 p-1.5 rounded-xl border border-white/10 flex items-center justify-center"
+                            title="Preview Notes Document"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+                      )
+                    ) : cataloged ? (
+                      <div className="w-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center justify-center space-x-1.5">
+                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Cataloged</span>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleSelectDriveFile(file)}
+                        className="w-full py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center space-x-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Catalog as Sermon</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               );
             })}
           </div>
-        ) : driveFilter === 'uncataloged' && driveFiles.length > 0 ? (
+        ) : driveFilter === 'uncataloged' && driveAudioFiles.length > 0 ? (
           <div className="text-center py-8 text-xs text-gray-300 bg-gray-950/60 rounded-2xl border border-emerald-500/20 p-6 space-y-2">
             <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
             <p className="text-sm font-bold text-white">All Google Drive Audio Files Are Cataloged!</p>
             <p className="text-gray-400 max-w-md mx-auto">
-              All {driveFiles.length} file(s) in the tccmedia123 Google Drive folder have already been cataloged into the sermon repository.
+              All {driveAudioFiles.length} audio file(s) in the tccmedia123 Google Drive folder have already been cataloged into the sermon repository.
             </p>
-            <button
-              type="button"
-              onClick={() => setDriveFilter('all')}
-              className="inline-flex items-center space-x-1.5 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl border border-white/10 text-xs font-bold mt-2 transition-all"
-            >
-              <span>View All Drive Files</span>
-            </button>
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setDriveFilter('all')}
+                className="inline-flex items-center space-x-1.5 bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl border border-white/10 text-xs font-bold transition-all"
+              >
+                <span>View All Drive Files</span>
+              </button>
+              <button
+                type="button"
+                onClick={openNewSermonModal}
+                className="inline-flex items-center space-x-1.5 bg-[#d32f2f] hover:bg-red-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Create Sermon Manually</span>
+              </button>
+            </div>
           </div>
         ) : (
           <div className="text-center py-6 text-xs text-gray-400 bg-gray-950/60 rounded-2xl border border-white/5 space-y-2">
@@ -715,7 +1026,7 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
               Direct Google Drive folder integration active for <strong className="text-white">tccmedia123@gmail.com</strong>.
             </p>
             <p className="text-gray-500">
-              Click <strong className="text-amber-400">"Open tccmedia123 Google Drive"</strong> above to view files directly in Google Drive or add custom sermon metadata records below.
+              Click <strong className="text-amber-400">"Open Google Drive"</strong> above or use <strong className="text-red-400">"Add New Sermon"</strong> to create a sermon record with YouTube, notes, or audio.
             </p>
           </div>
         )}
@@ -733,7 +1044,7 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search sermons..."
+                placeholder="Search sermons by title, speaker, theme..."
                 className="w-full bg-gray-950 border border-white/10 rounded-2xl pl-10 pr-4 py-2 text-xs text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#d32f2f]"
               />
             </div>
@@ -873,6 +1184,7 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
                   <th className="py-3 px-4">Sermon Title & Theme</th>
                   <th className="py-3 px-4">Speaker</th>
                   <th className="py-3 px-4">Sermon Date</th>
+                  <th className="py-3 px-4">Collateral & Media</th>
                   <th className="py-3 px-4">Front-End Availability</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
@@ -880,6 +1192,9 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
               <tbody className="divide-y divide-white/5 text-xs">
                 {filteredSermons.map((sermon) => {
                   const isSelected = sermon.id ? selectedSermonIds.includes(sermon.id) : false;
+                  const hasAudio = Boolean(sermon.audioUrl || sermon.driveFileId || sermon.driveFileName);
+                  const hasYoutube = Boolean(sermon.youtubeUrl);
+                  const hasNotes = Boolean(sermon.notesUrl || sermon.notesDriveFileId || sermon.notesFileName);
 
                   return (
                     <tr 
@@ -896,18 +1211,13 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
                       </td>
                     
                     <td className="py-4 px-4 font-bold text-white">
-                      <div className="text-sm">
+                      <div className="text-sm flex items-center space-x-2">
                         <span>{sermon.title}</span>
                       </div>
                       <div className="text-[10px] text-gray-400 font-normal flex flex-wrap items-center gap-1.5 pt-0.5">
                         <span className="bg-red-500/10 text-red-400 px-2 py-0.5 rounded border border-red-500/20 font-bold uppercase">
                           {sermon.theme || 'Knowing God'}
                         </span>
-                        {sermon.driveFileName && (
-                          <span className="bg-amber-500/10 text-amber-300 px-2 py-0.5 rounded border border-amber-500/20 font-mono" title="Linked Google Drive File Name">
-                            📁 {sermon.driveFileName}
-                          </span>
-                        )}
                         {sermon.series && <span>Series: {sermon.series}</span>}
                       </div>
                     </td>
@@ -918,6 +1228,76 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
 
                     <td className="py-4 px-4 font-mono text-gray-300">
                       {sermon.sermonDate || '—'}
+                    </td>
+
+                    {/* Collateral & Media Indicators */}
+                    <td className="py-4 px-4">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {/* Audio Badge */}
+                        {hasAudio ? (
+                          <span 
+                            className="inline-flex items-center space-x-1 bg-amber-500/10 text-amber-300 border border-amber-500/20 px-2 py-0.5 rounded text-[10px] font-mono"
+                            title={sermon.driveFileName || 'Audio Stream'}
+                          >
+                            <Headphones className="w-2.5 h-2.5 text-amber-400" />
+                            <span>Audio</span>
+                          </span>
+                        ) : (
+                          <span className="text-gray-500 text-[10px]">No Audio</span>
+                        )}
+
+                        {/* YouTube Badge */}
+                        {hasYoutube && (
+                          <a
+                            href={sermon.youtubeUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center space-x-1 bg-red-600/15 hover:bg-red-600/25 text-red-300 border border-red-500/30 px-2 py-0.5 rounded text-[10px] font-mono transition-colors"
+                            title="Open YouTube Video"
+                          >
+                            <Video className="w-3 h-3 text-red-400" />
+                            <span>YouTube</span>
+                          </a>
+                        )}
+
+                        {/* Sermon Notes Badge or Add Notes Button */}
+                        {hasNotes ? (
+                          <div 
+                            className="inline-flex items-center space-x-1 bg-blue-500/15 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded text-[10px] font-mono"
+                            title={sermon.notesFileName || 'Sermon Notes Document'}
+                          >
+                            <FileText className="w-2.5 h-2.5 text-blue-400" />
+                            <span className="truncate max-w-[90px]">{sermon.notesFileName || `Notes (${sermon.notesFileType?.toUpperCase() || 'PDF'})`}</span>
+                            <a
+                              href={sermon.notesDriveFileId ? `/api/drive/notes/view/${sermon.notesDriveFileId}?filename=${encodeURIComponent(sermon.notesFileName || 'notes.pdf')}` : (sermon.notesFileName ? `/api/drive/notes/view-by-name?filename=${encodeURIComponent(sermon.notesFileName)}` : sermon.notesUrl)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-300 hover:text-white p-0.5 rounded hover:bg-blue-500/20"
+                              title="Preview Notes Document"
+                            >
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => setSelectNotesForSermon(sermon)}
+                              className="text-blue-400 hover:text-white underline text-[9px] cursor-pointer ml-0.5"
+                              title="Change attached notes"
+                            >
+                              Change
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => setSelectNotesForSermon(sermon)}
+                            className="inline-flex items-center space-x-1 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded text-[10px] font-mono transition-colors cursor-pointer"
+                            title="Select and attach sermon notes document from Google Drive"
+                          >
+                            <Plus className="w-2.5 h-2.5 text-blue-400" />
+                            <span>+ Notes</span>
+                          </button>
+                        )}
+                      </div>
                     </td>
 
                     {/* Quick Toggle Checkbox for Front-End Availability */}
@@ -934,7 +1314,7 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
                         {sermon.isPublished ? (
                           <>
                             <Eye className="w-3 h-3 text-emerald-400" />
-                            <span>✓ Available on Front End</span>
+                            <span>✓ Available</span>
                           </>
                         ) : (
                           <>
@@ -949,7 +1329,7 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
                       <button
                         onClick={() => openEditModal(sermon)}
                         className="bg-white/5 hover:bg-white/10 text-gray-200 p-2 rounded-xl border border-white/10 transition-all"
-                        title="Edit Sermon Metadata"
+                        title="Edit Sermon & Collateral Metadata"
                       >
                         <Edit3 className="w-3.5 h-3.5" />
                       </button>
@@ -981,7 +1361,7 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
             <div className="flex items-center justify-between border-b border-white/10 pb-4">
               <h3 className="text-xl font-black text-white uppercase tracking-tight flex items-center space-x-2">
                 <Headphones className="w-5 h-5 text-red-400" />
-                <span>{editingSermon ? 'Edit Sermon Metadata' : 'Associate Sermon Metadata'}</span>
+                <span>{editingSermon ? 'Edit Sermon & Collateral' : 'Catalog New Sermon & Collateral'}</span>
               </h3>
               <button
                 onClick={() => setIsModalOpen(false)}
@@ -993,7 +1373,7 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
 
             <form onSubmit={handleSaveSermon} className="space-y-4 text-xs">
               
-              {/* 1. Website Display Title & Google Drive Exact File Name */}
+              {/* 1. Website Display Title & Google Drive Audio File Name */}
               <div className="bg-gray-950 p-4 rounded-2xl border border-white/10 space-y-4">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
@@ -1009,61 +1389,232 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
                       className="w-full bg-gray-900 border border-white/10 rounded-xl px-3.5 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#d32f2f]"
                     />
                     <p className="text-[10px] text-gray-400 mt-1">
-                      The customized title shown to visitors on the website. You can change this anytime without breaking playback!
+                      Customized title shown to website visitors.
                     </p>
                   </div>
 
                   <div>
                     <label className="block text-amber-400 font-bold uppercase tracking-wider mb-1">
-                      2. Exact Google Drive File Name *
+                      2. Exact Google Drive Audio File Name
                     </label>
                     <input
                       type="text"
-                      required
                       value={driveFileName}
                       onChange={(e) => {
                         const newFileName = e.target.value;
                         setDriveFileName(newFileName);
-                        const matched = driveFiles.find(f => f.name.trim().toLowerCase() === newFileName.trim().toLowerCase());
+                        const matched = driveAudioFiles.find(f => f.name.trim().toLowerCase() === newFileName.trim().toLowerCase());
                         if (matched) {
                           setDriveFileId(matched.id);
                           setAudioUrl(`/api/drive/stream/${matched.id}`);
+                          setDownloadUrl(`/api/drive/download/${matched.id}?filename=${encodeURIComponent(matched.name)}`);
                         }
                       }}
                       placeholder="e.g. 2026_06_07_Knowing_God.mp3"
                       className="w-full bg-gray-900 border border-white/10 rounded-xl px-3.5 py-2.5 text-white font-mono placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
                     <p className="text-[10px] text-gray-400 mt-1">
-                      Exact filename on Google Drive used to create the audio stream & download relationship.
+                      Google Drive filename for audio stream & download.
                     </p>
                   </div>
                 </div>
 
-                {/* Optional Google Drive Picker Dropdown */}
-                {driveFiles.length > 0 && (
+                {/* Optional Google Drive Audio Picker Dropdown */}
+                {driveAudioFiles.length > 0 && (
                   <div>
                     <label className="block text-[11px] text-gray-400 font-bold uppercase tracking-wider mb-1">
-                      Quick Pick from tccmedia123 Google Drive Folder:
+                      Quick Pick Audio from Google Drive Folder:
                     </label>
                     <select
                       value={driveFileId}
                       onChange={(e) => {
-                        const selectedFile = driveFiles.find(f => f.id === e.target.value);
+                        const selectedFile = driveAudioFiles.find(f => f.id === e.target.value);
                         if (selectedFile) {
                           setDriveFileId(selectedFile.id);
                           setDriveFileName(selectedFile.name);
                           setAudioUrl(`/api/drive/stream/${selectedFile.id}`);
+                          setDownloadUrl(`/api/drive/download/${selectedFile.id}?filename=${encodeURIComponent(selectedFile.name)}`);
+                          
+                          // Check companion notes
+                          const compNotes = findCompanionNotesFile(selectedFile.name);
+                          if (compNotes && !notesDriveFileId) {
+                            setNotesDriveFileId(compNotes.id);
+                            setNotesFileName(compNotes.name);
+                            setNotesUrl(`/api/drive/notes/view/${compNotes.id}?filename=${encodeURIComponent(compNotes.name)}`);
+                          }
                         }
                       }}
                       className="w-full bg-gray-900 border border-white/10 rounded-xl px-3 py-2 text-gray-300 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-amber-500"
                     >
-                      <option value="">-- Select File from Google Drive --</option>
-                      {driveFiles.map((file) => (
+                      <option value="">-- Select Audio File from Google Drive --</option>
+                      {driveAudioFiles.map((file) => (
                         <option key={file.id} value={file.id}>
                           {file.name}
                         </option>
                       ))}
                     </select>
+                  </div>
+                )}
+              </div>
+
+              {/* 2. YouTube Video URL Section */}
+              <div className="bg-gray-950 p-4 rounded-2xl border border-red-500/20 space-y-3">
+                <div className="flex items-center space-x-2 text-red-400 font-bold uppercase tracking-wider text-xs">
+                  <Video className="w-4 h-4 text-red-500" />
+                  <span>3. YouTube Sermon Video URL (Optional)</span>
+                </div>
+                <input
+                  type="text"
+                  value={youtubeUrl}
+                  onChange={(e) => setYoutubeUrl(e.target.value)}
+                  placeholder="e.g. https://www.youtube.com/watch?v=dQw4w9WgXcQ or https://youtu.be/..."
+                  className="w-full bg-gray-900 border border-white/10 rounded-xl px-3.5 py-2.5 text-white font-mono placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-red-500"
+                />
+                <p className="text-[10px] text-gray-400">
+                  Provide a YouTube URL if a video recording of this service/sermon is available on YouTube. Website visitors will be able to watch it directly!
+                </p>
+
+                {parsedYoutubeId && (
+                  <div className="bg-red-950/40 border border-red-500/30 p-2.5 rounded-xl text-gray-300 flex items-center justify-between text-xs">
+                    <span className="flex items-center space-x-2 text-red-300 font-mono text-[11px]">
+                      <Video className="w-3.5 h-3.5 text-red-400" />
+                      <span>Detected YouTube ID: <strong>{parsedYoutubeId}</strong></span>
+                    </span>
+                    <a
+                      href={`https://www.youtube.com/watch?v=${parsedYoutubeId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-red-400 hover:text-red-300 underline font-bold text-[10px] flex items-center space-x-1"
+                    >
+                      <span>Preview Video</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                )}
+              </div>
+
+              {/* 3. Sermon Notes Section (Google Drive Folder or Direct Link) */}
+              <div className="bg-gray-950 p-4 rounded-2xl border border-blue-500/20 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2 text-blue-400 font-bold uppercase tracking-wider text-xs">
+                    <FileText className="w-4 h-4 text-blue-400" />
+                    <span>4. Sermon Notes Document (PDF / Word / Document)</span>
+                  </div>
+                  {notesFileName && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNotesDriveFileId('');
+                        setNotesFileName('');
+                        setNotesUrl('');
+                        setNotesFileType('pdf');
+                      }}
+                      className="text-xs text-red-400 hover:text-red-300 underline font-bold"
+                    >
+                      Clear Notes
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-gray-300 font-bold uppercase tracking-wider mb-1 text-[11px]">
+                      Google Drive Notes File Name
+                    </label>
+                    <input
+                      type="text"
+                      value={notesFileName}
+                      onChange={(e) => {
+                        const newNotesName = e.target.value;
+                        setNotesFileName(newNotesName);
+                        const matchedNotes = driveNotesFiles.find(f => f.name.trim().toLowerCase() === newNotesName.trim().toLowerCase());
+                        if (matchedNotes) {
+                          setNotesDriveFileId(matchedNotes.id);
+                          setNotesUrl(`/api/drive/notes/view/${matchedNotes.id}?filename=${encodeURIComponent(matchedNotes.name)}`);
+                          setNotesFileType(matchedNotes.name.toLowerCase().endsWith('.docx') ? 'docx' : 'pdf');
+                        }
+                      }}
+                      placeholder="e.g. 2026_06_07_Sermon_Notes.pdf"
+                      className="w-full bg-gray-900 border border-white/10 rounded-xl px-3.5 py-2 text-white font-mono placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-gray-300 font-bold uppercase tracking-wider mb-1 text-[11px]">
+                      Direct Notes View / Download URL (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={notesUrl}
+                      onChange={(e) => setNotesUrl(e.target.value)}
+                      placeholder="https://... or auto-filled from Drive"
+                      className="w-full bg-gray-900 border border-white/10 rounded-xl px-3.5 py-2 text-white font-mono placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Quick Pick Notes from Google Drive */}
+                {driveNotesFiles.length > 0 && (
+                  <div>
+                    <label className="block text-[11px] text-gray-400 font-bold uppercase tracking-wider mb-1">
+                      Quick Pick Notes from tccmedia123 Google Drive:
+                    </label>
+                    <select
+                      value={notesDriveFileId}
+                      onChange={(e) => {
+                        const selectedNotes = driveNotesFiles.find(f => f.id === e.target.value);
+                        if (selectedNotes) {
+                          setNotesDriveFileId(selectedNotes.id);
+                          setNotesFileName(selectedNotes.name);
+                          setNotesUrl(`/api/drive/notes/view/${selectedNotes.id}?filename=${encodeURIComponent(selectedNotes.name)}`);
+                          setNotesFileType(selectedNotes.name.toLowerCase().endsWith('.docx') ? 'docx' : 'pdf');
+                        } else {
+                          setNotesDriveFileId('');
+                          setNotesFileName('');
+                          setNotesUrl('');
+                        }
+                      }}
+                      className="w-full bg-gray-900 border border-white/10 rounded-xl px-3 py-2 text-gray-300 font-mono text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">-- Select Notes File from Google Drive --</option>
+                      {driveNotesFiles.map((file) => (
+                        <option key={file.id} value={file.id}>
+                          📄 {file.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Notes Preview & Action Bar */}
+                {(notesDriveFileId || notesFileName || notesUrl) && (
+                  <div className="bg-blue-950/40 border border-blue-500/30 p-2.5 rounded-xl text-gray-300 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <span className="flex items-center space-x-2 text-blue-300 font-mono text-[11px]">
+                      <FileText className="w-3.5 h-3.5 text-blue-400" />
+                      <span className="truncate max-w-[220px]">
+                        Attached: <strong>{notesFileName || 'Direct URL Document'}</strong>
+                      </span>
+                    </span>
+                    <div className="flex items-center space-x-2">
+                      <a
+                        href={notesDriveFileId ? `/api/drive/notes/view/${notesDriveFileId}?filename=${encodeURIComponent(notesFileName || 'notes.pdf')}` : (notesFileName ? `/api/drive/notes/view-by-name?filename=${encodeURIComponent(notesFileName)}` : notesUrl)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-400 hover:text-blue-300 underline font-bold text-[10px] flex items-center space-x-1"
+                      >
+                        <span>Preview Notes</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                      <a
+                        href={notesDriveFileId ? `/api/drive/notes/download/${notesDriveFileId}?filename=${encodeURIComponent(notesFileName || 'notes.pdf')}` : (notesFileName ? `/api/drive/notes/download-by-name?filename=${encodeURIComponent(notesFileName)}` : notesUrl)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-400 hover:text-blue-300 underline font-bold text-[10px] flex items-center space-x-1"
+                      >
+                        <span>Test Download</span>
+                        <Download className="w-3 h-3" />
+                      </a>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1098,54 +1649,33 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
                 </div>
               </div>
 
-              {/* Category / Theme */}
-              <div>
-                <label className="block text-gray-300 font-bold uppercase tracking-wider mb-1">
-                  Theme / Category
-                </label>
-                <input
-                  type="text"
-                  value={theme}
-                  onChange={(e) => setTheme(e.target.value)}
-                  placeholder="e.g. Knowing God, Faith, Grace"
-                  className="w-full bg-gray-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#d32f2f]"
-                />
-              </div>
-
-              {/* Series Name */}
-              <div>
-                <label className="block text-gray-300 font-bold uppercase tracking-wider mb-1">
-                  Series Name (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={series}
-                  onChange={(e) => setSeries(e.target.value)}
-                  placeholder="e.g. Kingdom Foundations"
-                  className="w-full bg-gray-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#d32f2f]"
-                />
-              </div>
-
-              {/* Audio URL & Download Link */}
-              <div className="space-y-3 pt-2 border-t border-white/10">
+              {/* Category / Theme & Series */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-gray-300 font-bold uppercase tracking-wider mb-1">
-                    Audio Playable Stream URL / Google Drive Link
+                    Theme / Category
                   </label>
                   <input
                     type="text"
-                    value={audioUrl}
-                    onChange={(e) => setAudioUrl(e.target.value)}
-                    placeholder="https://docs.google.com/uc?export=open&id=..."
-                    className="w-full bg-gray-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-white font-mono placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#d32f2f]"
+                    value={theme}
+                    onChange={(e) => setTheme(e.target.value)}
+                    placeholder="e.g. Knowing God, Faith, Grace"
+                    className="w-full bg-gray-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#d32f2f]"
                   />
                 </div>
 
-                {driveFileId && (
-                  <div className="bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-xl text-gray-300 text-[11px] font-mono">
-                    Linked Google Drive File ID: <strong className="text-amber-400">{driveFileId}</strong>
-                  </div>
-                )}
+                <div>
+                  <label className="block text-gray-300 font-bold uppercase tracking-wider mb-1">
+                    Series Name (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={series}
+                    onChange={(e) => setSeries(e.target.value)}
+                    placeholder="e.g. Kingdom Foundations"
+                    className="w-full bg-gray-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#d32f2f]"
+                  />
+                </div>
               </div>
 
               {/* Description & Scripture */}
@@ -1191,7 +1721,7 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
                   <span className="text-gray-400 text-[11px] block">
                     {(editingSermon?.isArchived || editingSermon?.title === 'Archived' || editingSermon?.status === 'Archived')
                       ? "🔒 Archived items cannot be enabled on the front end. All metadata has been removed."
-                      : "Check this box to allow website visitors to listen and download this sermon."}
+                      : "Check this box to allow website visitors to listen, watch, and download this sermon and notes."}
                   </span>
                 </div>
 
@@ -1227,7 +1757,7 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
                 <button
                   type="submit"
                   disabled={saving}
-                  className="bg-[#d32f2f] hover:bg-red-700 text-white font-black uppercase tracking-wider px-6 py-2.5 rounded-xl shadow-lg disabled:opacity-50"
+                  className="bg-[#d32f2f] hover:bg-red-700 text-white font-black uppercase tracking-wider px-6 py-2.5 rounded-xl shadow-lg disabled:opacity-50 cursor-pointer"
                 >
                   {saving ? 'Saving...' : editingSermon ? 'Update Sermon' : 'Save & Publish'}
                 </button>
@@ -1332,6 +1862,198 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Select Notes for Existing Sermon Modal */}
+      {selectNotesForSermon && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-white/10 rounded-3xl max-w-xl w-full p-6 space-y-5 shadow-2xl relative">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center space-x-2 text-blue-400 font-bold uppercase tracking-wider text-xs">
+                <FileText className="w-5 h-5 text-blue-400" />
+                <span>Select Notes Document for: <span className="text-white normal-case font-bold">{selectNotesForSermon.title}</span></span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectNotesForSermon(null)}
+                className="text-gray-400 hover:text-white p-1.5 rounded-xl bg-white/5"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs text-gray-300">
+              <p>
+                Choose a sermon notes document (PDF / Word) from the <strong className="text-blue-300">tccmedia123</strong> Google Drive folder to attach to this sermon:
+              </p>
+
+              {driveNotesFiles.length > 0 ? (
+                <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                  {driveNotesFiles.map((notesFile) => {
+                    const isAlreadyAttached = selectNotesForSermon.notesDriveFileId === notesFile.id || (selectNotesForSermon.notesFileName && selectNotesForSermon.notesFileName.trim().toLowerCase() === notesFile.name.trim().toLowerCase());
+                    return (
+                      <div
+                        key={notesFile.id}
+                        className={`p-3 rounded-2xl border flex items-center justify-between transition-all ${
+                          isAlreadyAttached
+                            ? 'bg-blue-500/15 border-blue-500/40 text-white'
+                            : 'bg-gray-950 border-white/10 hover:border-blue-500/30'
+                        }`}
+                      >
+                        <div className="flex items-center space-x-2 min-w-0 pr-2">
+                          <FileText className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                          <div className="min-w-0">
+                            <h5 className="font-bold text-white truncate text-xs">{notesFile.name}</h5>
+                            <span className="text-[10px] text-gray-400 font-mono">
+                              {notesFile.createdTime ? notesFile.createdTime.split('T')[0] : 'Drive File'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center space-x-2 flex-shrink-0">
+                          <a
+                            href={`/api/drive/notes/view/${notesFile.id}?filename=${encodeURIComponent(notesFile.name)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="bg-white/5 hover:bg-white/10 text-gray-300 p-1.5 rounded-xl border border-white/10"
+                            title="Preview Document"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+
+                          {isAlreadyAttached ? (
+                            <button
+                              type="button"
+                              onClick={() => selectNotesForSermon.id && handleQuickDetachNotes(selectNotesForSermon.id)}
+                              className="bg-red-500/10 hover:bg-red-500/20 text-red-300 px-3 py-1.5 rounded-xl border border-red-500/30 font-bold"
+                            >
+                              Detach
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => selectNotesForSermon.id && handleQuickAttachNotes(selectNotesForSermon.id, notesFile)}
+                              disabled={saving}
+                              className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-xl font-bold transition-all flex items-center space-x-1"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Select Note</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="bg-gray-950 p-4 rounded-2xl border border-white/10 text-center text-gray-400 space-y-2">
+                  <FileText className="w-6 h-6 text-gray-500 mx-auto" />
+                  <p>No document files (.pdf, .docx) detected in the Google Drive folder yet.</p>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 flex items-center justify-between border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => {
+                  const s = selectNotesForSermon;
+                  setSelectNotesForSermon(null);
+                  openEditModal(s);
+                }}
+                className="text-xs text-gray-400 hover:text-white underline"
+              >
+                Open Full Sermon Editor
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSelectNotesForSermon(null)}
+                className="bg-white/10 hover:bg-white/15 text-white font-bold px-4 py-2 rounded-xl text-xs"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Attach Notes File to an Existing Sermon Modal */}
+      {attachNotesModalFile && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-white/10 rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl relative">
+            <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center space-x-2 text-blue-400 font-bold uppercase tracking-wider text-xs">
+                <FileText className="w-5 h-5 text-blue-400" />
+                <span>Attach Notes to Sermon</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAttachNotesModalFile(null)}
+                className="text-gray-400 hover:text-white p-1.5 rounded-xl bg-white/5"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs text-gray-300">
+              <div className="bg-gray-950 p-3.5 rounded-2xl border border-blue-500/20 space-y-1">
+                <span className="text-[10px] uppercase font-bold text-blue-400">Selected Google Drive Notes Document:</span>
+                <h4 className="font-bold text-white text-sm break-all">{attachNotesModalFile.name}</h4>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-300 mb-1.5">
+                  Select an Existing Sermon to Link:
+                </label>
+                <select
+                  value={selectedTargetSermonId}
+                  onChange={(e) => setSelectedTargetSermonId(e.target.value)}
+                  className="w-full bg-gray-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-white text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">-- Choose a Sermon --</option>
+                  {sermonsList.filter(s => !s.isArchived && s.status !== 'Archived' && s.title !== 'Archived').map((sermon) => (
+                    <option key={sermon.id} value={sermon.id}>
+                      {sermon.title} ({sermon.sermonDate || 'No date'}) {sermon.notesFileName ? '— [Has Notes Attached]' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="pt-2 flex items-center justify-between border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => {
+                  const f = attachNotesModalFile;
+                  setAttachNotesModalFile(null);
+                  handleSelectDriveFile(f);
+                }}
+                className="text-xs text-amber-400 hover:text-amber-300 underline font-bold"
+              >
+                + Or Create New Sermon with this Note
+              </button>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setAttachNotesModalFile(null)}
+                  className="bg-white/5 hover:bg-white/10 text-gray-300 font-bold px-4 py-2 rounded-xl text-xs border border-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!selectedTargetSermonId || saving}
+                  onClick={() => selectedTargetSermonId && handleQuickAttachNotes(selectedTargetSermonId, attachNotesModalFile)}
+                  className="bg-blue-600 hover:bg-blue-500 text-white font-bold uppercase tracking-wider px-5 py-2 rounded-xl text-xs shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {saving ? 'Attaching...' : 'Attach Notes'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

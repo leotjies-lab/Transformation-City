@@ -19,7 +19,13 @@ import {
   Headphones,
   ArrowUpDown,
   RefreshCw,
-  Sparkles
+  Sparkles,
+  FileText,
+  Video,
+  FileDown,
+  X,
+  Eye,
+  Tv
 } from 'lucide-react';
 
 // Default sample sermons to display if Firestore collection is empty initially
@@ -111,6 +117,14 @@ const INITIAL_SAMPLE_SERMONS: Sermon[] = [
   }
 ];
 
+// Helper to extract YouTube video ID from various URL formats
+const getYouTubeVideoId = (url?: string): string | null => {
+  if (!url) return null;
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
+};
+
 interface SermonsPageProps {
   onNavigate?: (path: string) => void;
 }
@@ -122,7 +136,11 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
   // Filters & Sorting state
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTheme, setSelectedTheme] = useState('All');
+  const [mediaFilter, setMediaFilter] = useState<'all' | 'video' | 'notes' | 'audio'>('all');
   const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'title_asc' | 'length_desc'>('date_desc');
+
+  // Active Video Modal State
+  const [activeVideoSermon, setActiveVideoSermon] = useState<Sermon | null>(null);
 
   // Currently playing audio state
   const [activeSermonId, setActiveSermonId] = useState<string | null>(null);
@@ -226,6 +244,28 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
     }
 
     return rawUrl;
+  };
+
+  // Helper to resolve Notes View URL
+  const resolveNotesViewUrl = (sermon: Sermon): string => {
+    if (sermon.notesDriveFileId) {
+      return `/api/drive/notes/view/${sermon.notesDriveFileId}?filename=${encodeURIComponent(sermon.notesFileName || 'notes.pdf')}`;
+    }
+    if (sermon.notesFileName) {
+      return `/api/drive/notes/view-by-name?filename=${encodeURIComponent(sermon.notesFileName)}`;
+    }
+    return sermon.notesUrl || '';
+  };
+
+  // Helper to resolve Notes Download URL
+  const resolveNotesDownloadUrl = (sermon: Sermon): string => {
+    if (sermon.notesDriveFileId) {
+      return `/api/drive/notes/download/${sermon.notesDriveFileId}?filename=${encodeURIComponent(sermon.notesFileName || 'notes.pdf')}`;
+    }
+    if (sermon.notesFileName) {
+      return `/api/drive/notes/download-by-name?filename=${encodeURIComponent(sermon.notesFileName)}`;
+    }
+    return sermon.notesDownloadUrl || sermon.notesUrl || '';
   };
 
   // Handle Play/Pause
@@ -343,7 +383,16 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
 
     const matchesTheme = selectedTheme === 'All' || sermon.theme === selectedTheme;
 
-    return matchesSearch && matchesTheme;
+    let matchesMedia = true;
+    if (mediaFilter === 'video') {
+      matchesMedia = Boolean(sermon.youtubeUrl);
+    } else if (mediaFilter === 'notes') {
+      matchesMedia = Boolean(sermon.notesUrl || sermon.notesDriveFileId || sermon.notesFileName);
+    } else if (mediaFilter === 'audio') {
+      matchesMedia = Boolean(sermon.audioUrl || sermon.driveFileId || sermon.driveFileName);
+    }
+
+    return matchesSearch && matchesTheme && matchesMedia;
   }).sort((a, b) => {
     if (sortBy === 'date_desc') {
       return new Date(b.sermonDate).getTime() - new Date(a.sermonDate).getTime();
@@ -394,18 +443,18 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
       <section className="relative overflow-hidden bg-gradient-to-b from-red-950/60 via-gray-900 to-gray-950 border-b border-white/10 py-16 sm:py-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center space-y-6">
           <h1 className="text-4xl sm:text-6xl font-black uppercase tracking-tight text-white leading-none">
-            Sermon <span className="text-[#d32f2f]">Recordings</span>
+            Sermon <span className="text-[#d32f2f]">Recordings & Media</span>
           </h1>
 
           <p className="text-base sm:text-lg text-gray-300 max-w-2xl mx-auto leading-relaxed font-normal">
-            Listen to life-transforming messages, Sunday teachings, and spiritual encouragement from Transformation City Church. Stream or download anytime.
+            Listen to life-transforming audio messages, watch video sermons, and download sermon notes and study materials from Transformation City Church.
           </p>
         </div>
       </section>
 
       {/* Controls & Filter Bar */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-6 relative z-20">
-        <div className="bg-gray-900 border border-white/10 p-5 rounded-3xl shadow-2xl space-y-4 md:space-y-0 md:flex md:items-center md:justify-between md:space-x-4">
+        <div className="bg-gray-900 border border-white/10 p-5 rounded-3xl shadow-2xl space-y-4 lg:space-y-0 lg:flex lg:items-center lg:justify-between lg:space-x-4">
           
           {/* Search Box */}
           <div className="relative flex-grow max-w-md">
@@ -419,37 +468,78 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
             />
           </div>
 
-          {/* Theme Category Filter */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-gray-400 flex items-center space-x-1.5 mr-1">
-              <Filter className="w-3.5 h-3.5 text-red-400" />
-              <span>Theme:</span>
-            </span>
-            <select
-              value={selectedTheme}
-              onChange={(e) => setSelectedTheme(e.target.value)}
-              className="bg-gray-950 border border-white/10 text-white text-xs font-bold px-3 py-2.5 rounded-xl outline-none cursor-pointer focus:ring-2 focus:ring-[#d32f2f]"
+          {/* Media Format Filter Tabs */}
+          <div className="flex items-center space-x-1.5 bg-gray-950 p-1.5 rounded-2xl border border-white/10 text-xs">
+            <button
+              onClick={() => setMediaFilter('all')}
+              className={`px-3 py-1.5 rounded-xl font-bold transition-all ${
+                mediaFilter === 'all' ? 'bg-white/15 text-white shadow-sm' : 'text-gray-400 hover:text-white'
+              }`}
             >
-              <option value="All">All Themes ({sermons.length})</option>
-              {availableThemes.map((theme) => (
-                <option key={theme} value={theme}>{theme}</option>
-              ))}
-            </select>
+              All Formats
+            </button>
+            <button
+              onClick={() => setMediaFilter('video')}
+              className={`px-3 py-1.5 rounded-xl font-bold transition-all flex items-center space-x-1.5 ${
+                mediaFilter === 'video' ? 'bg-red-600/30 text-red-300 border border-red-500/40' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Video className="w-3.5 h-3.5 text-red-400" />
+              <span>Video</span>
+            </button>
+            <button
+              onClick={() => setMediaFilter('notes')}
+              className={`px-3 py-1.5 rounded-xl font-bold transition-all flex items-center space-x-1.5 ${
+                mediaFilter === 'notes' ? 'bg-blue-600/30 text-blue-300 border border-blue-500/40' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <FileText className="w-3.5 h-3.5 text-blue-400" />
+              <span>Notes</span>
+            </button>
+            <button
+              onClick={() => setMediaFilter('audio')}
+              className={`px-3 py-1.5 rounded-xl font-bold transition-all flex items-center space-x-1.5 ${
+                mediaFilter === 'audio' ? 'bg-amber-600/30 text-amber-300 border border-amber-500/40' : 'text-gray-400 hover:text-white'
+              }`}
+            >
+              <Headphones className="w-3.5 h-3.5 text-amber-400" />
+              <span>Audio</span>
+            </button>
           </div>
 
-          {/* Sort By Metadata */}
-          <div className="flex items-center space-x-2 bg-gray-950 border border-white/10 px-3 py-2 rounded-xl">
-            <ArrowUpDown className="w-3.5 h-3.5 text-gray-400" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Sort By:</span>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as any)}
-              className="bg-transparent text-xs font-bold text-white outline-none cursor-pointer"
-            >
-              <option value="date_desc" className="bg-gray-900 text-white">Date: Newest First</option>
-              <option value="date_asc" className="bg-gray-900 text-white">Date: Oldest First</option>
-              <option value="title_asc" className="bg-gray-900 text-white">Title: A-Z</option>
-            </select>
+          {/* Theme Category Filter & Sort */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center space-x-1.5">
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-400 flex items-center space-x-1">
+                <Filter className="w-3.5 h-3.5 text-red-400" />
+                <span>Theme:</span>
+              </span>
+              <select
+                value={selectedTheme}
+                onChange={(e) => setSelectedTheme(e.target.value)}
+                className="bg-gray-950 border border-white/10 text-white text-xs font-bold px-3 py-2.5 rounded-xl outline-none cursor-pointer focus:ring-2 focus:ring-[#d32f2f]"
+              >
+                <option value="All">All Themes ({sermons.length})</option>
+                {availableThemes.map((theme) => (
+                  <option key={theme} value={theme}>{theme}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Sort By Metadata */}
+            <div className="flex items-center space-x-2 bg-gray-950 border border-white/10 px-3 py-2 rounded-xl">
+              <ArrowUpDown className="w-3.5 h-3.5 text-gray-400" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Sort:</span>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="bg-transparent text-xs font-bold text-white outline-none cursor-pointer"
+              >
+                <option value="date_desc" className="bg-gray-900 text-white">Newest First</option>
+                <option value="date_asc" className="bg-gray-900 text-white">Oldest First</option>
+                <option value="title_asc" className="bg-gray-900 text-white">Title: A-Z</option>
+              </select>
+            </div>
           </div>
 
         </div>
@@ -464,7 +554,7 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
             <div className="flex items-center space-x-3 w-full md:w-1/3">
               <button 
                 onClick={() => handleTogglePlay(activeSermon)}
-                className="w-11 h-11 bg-[#d32f2f] hover:bg-red-700 text-white rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-95 flex-shrink-0"
+                className="w-11 h-11 bg-[#d32f2f] hover:bg-red-700 text-white rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-95 flex-shrink-0 cursor-pointer"
               >
                 {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
               </button>
@@ -488,8 +578,34 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
               <span className="text-xs font-mono text-gray-400 w-10">{formatTime(duration)}</span>
             </div>
 
-            {/* Download & Drive Link */}
+            {/* Download & Actions */}
             <div className="flex items-center space-x-2 w-full md:w-auto justify-end">
+              {/* If Notes are attached */}
+              {(activeSermon.notesUrl || activeSermon.notesDriveFileId) && (
+                <a
+                  href={resolveNotesViewUrl(activeSermon)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 text-xs font-bold px-3 py-2 rounded-xl border border-blue-500/30 flex items-center space-x-1.5 transition-all"
+                  title="View Sermon Notes"
+                >
+                  <FileText className="w-3.5 h-3.5 text-blue-400" />
+                  <span>Notes</span>
+                </a>
+              )}
+
+              {/* If Video/YouTube is attached */}
+              {activeSermon.youtubeUrl && (
+                <button
+                  onClick={() => setActiveVideoSermon(activeSermon)}
+                  className="bg-red-500/10 hover:bg-red-500/20 text-red-300 text-xs font-bold px-3 py-2 rounded-xl border border-red-500/30 flex items-center space-x-1.5 transition-all cursor-pointer"
+                  title="Watch Video"
+                >
+                  <Video className="w-3.5 h-3.5 text-red-400" />
+                  <span>Video</span>
+                </button>
+              )}
+
               <button
                 onClick={(e) => handleDownloadSermon(e, activeSermon)}
                 disabled={downloadingId === (activeSermon.id || activeSermon.title)}
@@ -497,8 +613,108 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
                 title="Download MP3 Audio File"
               >
                 <Download className={`w-3.5 h-3.5 text-red-400 ${downloadingId === (activeSermon.id || activeSermon.title) ? 'animate-bounce' : ''}`} />
-                <span>{downloadingId === (activeSermon.id || activeSermon.title) ? 'Downloading...' : 'Download'}</span>
+                <span>{downloadingId === (activeSermon.id || activeSermon.title) ? 'Downloading...' : 'Audio'}</span>
               </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* Video Modal Viewer */}
+      {activeVideoSermon && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-white/10 rounded-3xl max-w-4xl w-full p-6 space-y-4 shadow-2xl relative">
+            <div className="flex items-center justify-between border-b border-white/10 pb-4">
+              <div>
+                <span className="text-[10px] font-mono uppercase tracking-widest text-red-400 font-bold flex items-center space-x-1.5">
+                  <Video className="w-3.5 h-3.5 text-red-500" />
+                  <span>Sermon Video Stream</span>
+                </span>
+                <h3 className="text-lg font-black text-white">{activeVideoSermon.title}</h3>
+                <p className="text-xs text-gray-400">{activeVideoSermon.speaker} • {activeVideoSermon.sermonDate}</p>
+              </div>
+
+              <button
+                onClick={() => setActiveVideoSermon(null)}
+                className="text-gray-400 hover:text-white p-2 rounded-2xl bg-white/5 hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Embedded YouTube Iframe */}
+            {(() => {
+              const videoId = getYouTubeVideoId(activeVideoSermon.youtubeUrl);
+              if (videoId) {
+                return (
+                  <div className="aspect-video w-full rounded-2xl overflow-hidden bg-black shadow-inner border border-white/5">
+                    <iframe
+                      src={`https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1&rel=0`}
+                      title={activeVideoSermon.title}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowFullScreen
+                      className="w-full h-full border-0"
+                    />
+                  </div>
+                );
+              }
+              return (
+                <div className="text-center py-12 text-gray-400 space-y-2">
+                  <p>Unable to embed this video link.</p>
+                  <a
+                    href={activeVideoSermon.youtubeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-red-400 hover:underline text-xs font-bold inline-flex items-center space-x-1"
+                  >
+                    <span>Open video in new tab</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              );
+            })()}
+
+            {/* Companion Audio & Notes Actions inside Modal */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+              <div className="flex items-center space-x-2">
+                {(activeVideoSermon.notesUrl || activeVideoSermon.notesDriveFileId) && (
+                  <a
+                    href={resolveNotesViewUrl(activeVideoSermon)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-blue-500/15 hover:bg-blue-500/25 text-blue-300 border border-blue-500/30 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-colors"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-blue-400" />
+                    <span>View Sermon Notes</span>
+                    <ExternalLink className="w-3 h-3 text-blue-400" />
+                  </a>
+                )}
+                {(activeVideoSermon.notesDriveFileId || activeVideoSermon.notesDownloadUrl) && (
+                  <a
+                    href={resolveNotesDownloadUrl(activeVideoSermon)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="bg-gray-800 hover:bg-gray-700 text-gray-300 border border-white/10 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-colors"
+                  >
+                    <FileDown className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Download Notes</span>
+                  </a>
+                )}
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <a
+                  href={activeVideoSermon.youtubeUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 px-4 py-2 rounded-xl text-xs font-bold flex items-center space-x-1.5 transition-colors"
+                >
+                  <Video className="w-3.5 h-3.5 text-red-400" />
+                  <span>Open Video in New Window</span>
+                  <ExternalLink className="w-3 h-3 text-red-400" />
+                </a>
+              </div>
             </div>
 
           </div>
@@ -517,11 +733,11 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
             <Headphones className="w-12 h-12 text-gray-600 mx-auto" />
             <h3 className="text-lg font-bold text-white">No Sermons Found</h3>
             <p className="text-xs text-gray-400 max-w-md mx-auto">
-              No published sermon recordings matched your criteria. Try adjusting your search query or theme filter.
+              No published sermon recordings matched your criteria. Try adjusting your search query or media filter.
             </p>
             <button
-              onClick={() => { setSearchQuery(''); setSelectedTheme('All'); }}
-              className="bg-white/10 hover:bg-white/20 text-white text-xs font-bold px-4 py-2 rounded-xl border border-white/10"
+              onClick={() => { setSearchQuery(''); setSelectedTheme('All'); setMediaFilter('all'); }}
+              className="bg-white/10 hover:bg-white/20 text-white text-xs font-bold px-4 py-2 rounded-xl border border-white/10 cursor-pointer"
             >
               Reset Filters
             </button>
@@ -530,6 +746,9 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredSermons.map((sermon) => {
               const isCurrentPlaying = activeSermonId === sermon.id && isPlaying;
+              const hasAudio = Boolean(sermon.audioUrl || sermon.driveFileId || sermon.driveFileName);
+              const hasYoutube = Boolean(sermon.youtubeUrl);
+              const hasNotes = Boolean(sermon.notesUrl || sermon.notesDriveFileId || sermon.notesFileName);
 
               return (
                 <div 
@@ -565,6 +784,28 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
                       </span>
                     </div>
 
+                    {/* Media Type Availability Badges */}
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      {hasAudio && (
+                        <span className="inline-flex items-center space-x-1 text-[10px] font-mono bg-amber-500/10 text-amber-300 border border-amber-500/20 px-2 py-0.5 rounded">
+                          <Headphones className="w-3 h-3 text-amber-400" />
+                          <span>Audio</span>
+                        </span>
+                      )}
+                      {hasYoutube && (
+                        <span className="inline-flex items-center space-x-1 text-[10px] font-mono bg-red-600/15 text-red-300 border border-red-500/30 px-2 py-0.5 rounded">
+                          <Video className="w-3 h-3 text-red-400" />
+                          <span>Video Available</span>
+                        </span>
+                      )}
+                      {hasNotes && (
+                        <span className="inline-flex items-center space-x-1 text-[10px] font-mono bg-blue-500/15 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded">
+                          <FileText className="w-3 h-3 text-blue-400" />
+                          <span>Notes ({sermon.notesFileType?.toUpperCase() || 'PDF'})</span>
+                        </span>
+                      )}
+                    </div>
+
                     {/* Description */}
                     {sermon.description && (
                       <p className="text-xs text-gray-400 leading-relaxed line-clamp-3">
@@ -581,37 +822,95 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
                     )}
                   </div>
 
-                  {/* Actions Bar */}
-                  <div className="pt-4 border-t border-white/10 flex items-center justify-between gap-3">
-                    <button
-                      onClick={() => handleTogglePlay(sermon)}
-                      className={`flex-1 py-3 px-4 rounded-2xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center space-x-2 shadow-lg ${
-                        isCurrentPlaying 
-                          ? 'bg-amber-500 text-gray-950 font-black' 
-                          : 'bg-[#d32f2f] hover:bg-red-700 text-white'
-                      }`}
-                    >
-                      {isCurrentPlaying ? (
-                        <>
-                          <Pause className="w-4 h-4 fill-current" />
-                          <span>Pause Audio</span>
-                        </>
-                      ) : (
-                        <>
-                          <Play className="w-4 h-4 fill-current ml-0.5" />
-                          <span>Listen Now</span>
-                        </>
+                  {/* Collateral & Action Buttons */}
+                  <div className="space-y-2 pt-3 border-t border-white/10">
+                    
+                    {/* Primary Play Audio / Watch Video Buttons */}
+                    <div className="flex items-center gap-2">
+                      {hasAudio && (
+                        <button
+                          onClick={() => handleTogglePlay(sermon)}
+                          className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center space-x-1.5 shadow-md cursor-pointer ${
+                            isCurrentPlaying 
+                              ? 'bg-amber-500 text-gray-950 font-black' 
+                              : 'bg-[#d32f2f] hover:bg-red-700 text-white'
+                          }`}
+                        >
+                          {isCurrentPlaying ? (
+                            <>
+                              <Pause className="w-3.5 h-3.5 fill-current" />
+                              <span>Pause Audio</span>
+                            </>
+                          ) : (
+                            <>
+                              <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                              <span>Listen Audio</span>
+                            </>
+                          )}
+                        </button>
                       )}
-                    </button>
 
-                    <button
-                      onClick={(e) => handleDownloadSermon(e, sermon)}
-                      disabled={downloadingId === (sermon.id || sermon.title)}
-                      className="bg-white/5 hover:bg-white/15 text-gray-200 border border-white/10 p-3 rounded-2xl transition-all cursor-pointer disabled:opacity-50"
-                      title="Download MP3 Audio File"
-                    >
-                      <Download className={`w-4 h-4 text-red-400 ${downloadingId === (sermon.id || sermon.title) ? 'animate-bounce' : ''}`} />
-                    </button>
+                      {/* Video Watch Button */}
+                      {hasYoutube && (
+                        <button
+                          onClick={() => setActiveVideoSermon(sermon)}
+                          className={`py-2.5 px-3 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center space-x-1.5 shadow-md cursor-pointer ${
+                            !hasAudio ? 'flex-1 bg-red-600 hover:bg-red-700 text-white' : 'bg-red-950/70 hover:bg-red-900/80 text-red-200 border border-red-500/40'
+                          }`}
+                          title="Watch Sermon Video"
+                        >
+                          <Video className="w-4 h-4 text-red-400" />
+                          <span>Watch Video</span>
+                        </button>
+                      )}
+
+                      {/* Direct Audio Download Button */}
+                      {hasAudio && (
+                        <button
+                          onClick={(e) => handleDownloadSermon(e, sermon)}
+                          disabled={downloadingId === (sermon.id || sermon.title)}
+                          className="bg-white/5 hover:bg-white/15 text-gray-200 border border-white/10 p-2.5 rounded-xl transition-all cursor-pointer disabled:opacity-50 flex-shrink-0"
+                          title="Download MP3 Audio File"
+                        >
+                          <Download className={`w-4 h-4 text-red-400 ${downloadingId === (sermon.id || sermon.title) ? 'animate-bounce' : ''}`} />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Sermon Notes Bar (If Notes exist for this sermon) */}
+                    {hasNotes && (
+                      <div className="bg-blue-950/30 border border-blue-500/20 p-2 rounded-xl flex items-center justify-between text-xs">
+                        <div className="flex items-center space-x-1.5 text-blue-300 font-bold text-[11px] truncate">
+                          <FileText className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                          <span className="truncate">{sermon.notesFileName || 'Sermon Notes Document'}</span>
+                        </div>
+
+                        <div className="flex items-center space-x-1.5 flex-shrink-0">
+                          <a
+                            href={resolveNotesViewUrl(sermon)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 px-2 py-1 rounded-lg text-[10px] font-bold transition-colors flex items-center space-x-1"
+                            title="View Sermon Notes"
+                          >
+                            <Eye className="w-3 h-3 text-blue-400" />
+                            <span>View</span>
+                          </a>
+
+                          <a
+                            href={resolveNotesDownloadUrl(sermon)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="bg-white/5 hover:bg-white/10 text-gray-300 px-2 py-1 rounded-lg text-[10px] font-bold transition-colors flex items-center space-x-1"
+                            title="Download Sermon Notes"
+                          >
+                            <FileDown className="w-3 h-3 text-blue-400" />
+                            <span>Download</span>
+                          </a>
+                        </div>
+                      </div>
+                    )}
+
                   </div>
 
                 </div>

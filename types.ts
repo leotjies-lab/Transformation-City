@@ -134,6 +134,15 @@ export interface Sermon {
   downloadUrl?: string; // Direct download link
   driveWebViewLink?: string;
   fileSize?: string;
+  // YouTube video integration
+  youtubeUrl?: string;
+  // Sermon notes integration (Google Drive or direct PDF/doc link)
+  notesDriveFileId?: string;
+  notesFileName?: string;
+  notesUrl?: string;
+  notesDownloadUrl?: string;
+  notesFileWebViewLink?: string;
+  notesFileType?: string; // e.g. 'pdf' | 'docx' | 'txt'
   isPublished: boolean; // Checkbox to make available on front end
   isArchived?: boolean;
   status?: string;
@@ -150,6 +159,9 @@ export interface DriveAudioFile {
   modifiedTime?: string;
   webViewLink?: string;
   webContentLink?: string;
+  fileCategory?: 'audio' | 'notes' | 'video' | 'other';
+  isAudio?: boolean;
+  isNotes?: boolean;
 }
 
 
