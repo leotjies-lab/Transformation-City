@@ -20,8 +20,8 @@ import {
 import { auth, db } from '../firebase';
 import { FormSubmission, SubmissionStatus, AdminMember, TCCEvent } from '../types';
 import { DEFAULT_INITIAL_EVENTS } from './EventCalendar';
-import FormManager from './FormManager';
 import WebsiteCollateralManager from './WebsiteCollateralManager';
+import { safeFetchJson } from '../utils/apiHelper';
 import { 
   ShieldCheck, 
   LogOut, 
@@ -29,9 +29,9 @@ import {
   Filter, 
   Download, 
   Mail, 
-  MailCheck,
-  MailWarning,
-  AlertTriangle,
+  MailCheck, 
+  MailWarning, 
+  AlertTriangle, 
   Phone, 
   MessageSquare, 
   Clock, 
@@ -39,28 +39,37 @@ import {
   Trash2, 
   Edit3, 
   CheckCircle2, 
-  AlertCircle,
-  X,
-  ExternalLink,
-  ChevronDown,
-  RefreshCw,
-  Users,
-  Inbox,
-  Lock,
-  ArrowLeft,
-  UserPlus,
-  Shield,
-  Key,
-  Calendar,
-  CalendarDays,
-  Plus,
-  Tag,
-  Repeat,
-  Ban,
-  CalendarCheck,
-  Check,
-  FileText,
-  Headphones
+  AlertCircle, 
+  X, 
+  ExternalLink, 
+  ChevronDown, 
+  RefreshCw, 
+  Users, 
+  Inbox, 
+  Lock, 
+  ArrowLeft, 
+  UserPlus, 
+  Shield, 
+  Key, 
+  Calendar, 
+  CalendarDays, 
+  Plus, 
+  Tag, 
+  Repeat, 
+  Ban, 
+  CalendarCheck, 
+  Check, 
+  FileText, 
+  Headphones,
+  Server,
+  Activity,
+  CheckCheck,
+  Send,
+  CheckSquare,
+  Square,
+  MinusSquare,
+  Layers,
+  AlertOctagon
 } from 'lucide-react';
 
 interface AdminPortalProps {
@@ -88,7 +97,50 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
   const [submittingAuth, setSubmittingAuth] = useState(false);
 
   // Active Navigation Tab
-  const [activeTab, setActiveTab] = useState<'submissions' | 'admins' | 'events' | 'custom_forms' | 'collateral'>('events');
+  const [activeTab, setActiveTab] = useState<'submissions' | 'admins' | 'events' | 'collateral'>('events');
+
+  // SMTP Live Diagnostics State
+  const [testingSmtp, setTestingSmtp] = useState(false);
+  const [smtpDiagResult, setSmtpDiagResult] = useState<{
+    tested: boolean;
+    success?: boolean;
+    error?: string;
+    workingPort?: number;
+    logs?: string[];
+    emailSent?: boolean;
+  } | null>(null);
+
+  const handleTestSmtpConnection = async (sendTestEmail = false) => {
+    setTestingSmtp(true);
+    setSmtpDiagResult(null);
+
+    const res = await safeFetchJson('/api/test-smtp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        testRecipient: currentUser?.email || adminSession?.email || 'admin@transformationcitychurch.org',
+        sendActualEmail: sendTestEmail,
+      }),
+    });
+
+    if (res.ok && res.data?.success) {
+      setSmtpDiagResult({
+        tested: true,
+        success: true,
+        workingPort: res.data.workingPort,
+        logs: res.data.logs,
+        emailSent: res.data.emailSent,
+      });
+    } else {
+      setSmtpDiagResult({
+        tested: true,
+        success: false,
+        error: res.error || res.data?.error || 'Failed to verify SMTP server connection',
+        logs: res.data?.logs || [res.error || 'Server error'],
+      });
+    }
+    setTestingSmtp(false);
+  };
 
   // Events state
   const [eventsList, setEventsList] = useState<TCCEvent[]>([]);
@@ -127,6 +179,20 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
   const [loadingData, setLoadingData] = useState(true);
   const [fetchError, setFetchError] = useState('');
 
+  // Multi-Selection State
+  const [selectedSubmissionIds, setSelectedSubmissionIds] = useState<string[]>([]);
+  
+  // Delete Modal & Operations State
+  const [deleteModalState, setDeleteModalState] = useState<{
+    isOpen: boolean;
+    ids: string[];
+    names: string[];
+    isBulk: boolean;
+  } | null>(null);
+  const [isDeletingSubmissions, setIsDeletingSubmissions] = useState(false);
+  const [actionBanner, setActionBanner] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+
   // Admin Team state
   const [adminsList, setAdminsList] = useState<AdminMember[]>([]);
   const [newAdminName, setNewAdminName] = useState('');
@@ -154,7 +220,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
     setResendAdminStatusMsg(null);
 
     try {
-      const res = await fetch('/api/submit-form', {
+      const res = await safeFetchJson('/api/submit-form', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -172,14 +238,15 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
           createdAt: sub.createdAt || new Date().toISOString()
         }),
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
+
+      if (res.ok && res.data?.success) {
         setResendAdminStatusMsg('Email successfully dispatched via SMTP to admin inbox!');
         if (sub.id) {
           await updateDoc(doc(db, 'submissions', sub.id), {
             emailDeliveryStatus: 'sent',
             emailDispatchedAt: new Date().toISOString(),
-            emailMessageId: data.messageId || null
+            emailMessageId: res.data.messageId || null,
+            emailError: null
           }).catch(() => {});
         }
         setSelectedSubmission((prev) => prev ? {
@@ -188,16 +255,17 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
           emailDispatchedAt: new Date().toISOString()
         } : null);
       } else {
-        setResendAdminStatusMsg(`Dispatch failed: ${data.error || 'SMTP delivery issue'}`);
+        const errorText = res.error || res.data?.error || 'SMTP delivery issue';
+        setResendAdminStatusMsg(`Dispatch failed: ${errorText}`);
         if (sub.id) {
           await updateDoc(doc(db, 'submissions', sub.id), {
             emailDeliveryStatus: 'failed',
-            emailError: data.error || 'SMTP delivery issue'
+            emailError: errorText
           }).catch(() => {});
         }
       }
     } catch (err: any) {
-      setResendAdminStatusMsg(`Network error: ${err.message}`);
+      setResendAdminStatusMsg(`Communication error: ${err.message}`);
     } finally {
       setIsResendingAdminEmail(false);
     }
@@ -857,18 +925,166 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
     }
   };
 
-  // Delete Submission
-  const handleDeleteSubmission = async (submissionId: string) => {
-    if (!window.confirm('Are you sure you want to delete this submission record?')) return;
+  // Prompt Single Delete (Opens custom in-app modal)
+  const promptDeleteSingle = (sub: FormSubmission, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!sub.id) return;
+    const fullName = `${sub.firstName} ${sub.lastName}`.trim() || sub.email || 'this submission';
+    setDeleteModalState({
+      isOpen: true,
+      ids: [sub.id],
+      names: [fullName],
+      isBulk: false,
+    });
+  };
+
+  // Prompt Bulk Delete (Opens custom in-app modal)
+  const promptDeleteBulk = () => {
+    if (selectedSubmissionIds.length === 0) return;
+    const selectedSubs = submissions.filter(s => s.id && selectedSubmissionIds.includes(s.id));
+    const names = selectedSubs.map(s => `${s.firstName} ${s.lastName}`.trim() || s.email);
+    setDeleteModalState({
+      isOpen: true,
+      ids: selectedSubmissionIds,
+      names,
+      isBulk: true,
+    });
+  };
+
+  // Execute Confirmed Delete Operation from Firestore
+  const confirmAndExecuteDelete = async () => {
+    if (!deleteModalState || deleteModalState.ids.length === 0) return;
+    setIsDeletingSubmissions(true);
+    const idsToDelete = [...deleteModalState.ids];
+
     try {
-      await deleteDoc(doc(db, 'submissions', submissionId));
-      if (selectedSubmission && selectedSubmission.id === submissionId) {
+      // Delete in parallel from Firestore 'submissions' and 'custom_submissions'
+      await Promise.allSettled(
+        idsToDelete.flatMap(id => [
+          deleteDoc(doc(db, 'submissions', id)),
+          deleteDoc(doc(db, 'custom_submissions', id)).catch(() => {})
+        ])
+      );
+
+      // Optimistically update local submissions state
+      setSubmissions(prev => prev.filter(s => !idsToDelete.includes(s.id!)));
+      setSelectedSubmissionIds(prev => prev.filter(id => !idsToDelete.includes(id)));
+
+      if (selectedSubmission && idsToDelete.includes(selectedSubmission.id!)) {
         setSelectedSubmission(null);
       }
-    } catch (err) {
-      console.error('Error deleting submission:', err);
-      alert('Failed to delete submission record.');
+
+      const count = idsToDelete.length;
+      setActionBanner({
+        type: 'success',
+        message: `Successfully deleted ${count} ${count === 1 ? 'submission record' : 'submission records'} from the database.`
+      });
+      setTimeout(() => setActionBanner(null), 4500);
+      setDeleteModalState(null);
+    } catch (err: any) {
+      console.error('Error executing delete operation:', err);
+      setActionBanner({
+        type: 'error',
+        message: `Failed to delete from Firestore: ${err.message || 'Unknown database error'}`
+      });
+    } finally {
+      setIsDeletingSubmissions(false);
     }
+  };
+
+  // Multi-selection Toggle Helpers
+  const handleToggleSelectAllFiltered = () => {
+    const filteredIds = filteredSubmissions.map(s => s.id).filter(Boolean) as string[];
+    if (filteredIds.length === 0) return;
+
+    const isAllSelected = filteredIds.every(id => selectedSubmissionIds.includes(id));
+    if (isAllSelected) {
+      setSelectedSubmissionIds(prev => prev.filter(id => !filteredIds.includes(id)));
+    } else {
+      setSelectedSubmissionIds(prev => Array.from(new Set([...prev, ...filteredIds])));
+    }
+  };
+
+  const handleToggleSelectOne = (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedSubmissionIds(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleClearSelection = () => {
+    setSelectedSubmissionIds([]);
+  };
+
+  // Bulk Status Update in Firestore
+  const handleBulkStatusChange = async (newStatus: SubmissionStatus) => {
+    if (selectedSubmissionIds.length === 0) return;
+    setIsBulkUpdating(true);
+    try {
+      await Promise.allSettled(
+        selectedSubmissionIds.map(id => 
+          updateDoc(doc(db, 'submissions', id), {
+            status: newStatus,
+            updatedAt: new Date().toISOString()
+          })
+        )
+      );
+
+      // Optimistically update local submissions state
+      setSubmissions(prev => prev.map(s => 
+        s.id && selectedSubmissionIds.includes(s.id) ? { ...s, status: newStatus } : s
+      ));
+
+      setActionBanner({
+        type: 'success',
+        message: `Updated status to "${newStatus.toUpperCase()}" for ${selectedSubmissionIds.length} submission(s).`
+      });
+      setTimeout(() => setActionBanner(null), 4500);
+    } catch (err: any) {
+      console.error('Bulk status update failed:', err);
+      setActionBanner({
+        type: 'error',
+        message: `Failed to update status in database: ${err.message}`
+      });
+    } finally {
+      setIsBulkUpdating(false);
+    }
+  };
+
+  // Export Selected or Filtered to CSV
+  const exportSelectedToCSV = () => {
+    const targetSubs = selectedSubmissionIds.length > 0 
+      ? submissions.filter(s => s.id && selectedSubmissionIds.includes(s.id))
+      : filteredSubmissions;
+    
+    if (targetSubs.length === 0) return;
+    
+    const headers = ['First Name', 'Last Name', 'Email', 'Phone', 'Interested In', 'User Message', 'Status', 'Admin Notes', 'Date Submitted'];
+    const csvRows = [headers.join(',')];
+
+    targetSubs.forEach((sub) => {
+      const msg = getSubmissionMessage(sub);
+      const row = [
+        `"${(sub.firstName || '').replace(/"/g, '""')}"`,
+        `"${(sub.lastName || '').replace(/"/g, '""')}"`,
+        `"${(sub.email || '').replace(/"/g, '""')}"`,
+        `"${(sub.phone || '').replace(/"/g, '""')}"`,
+        `"${(sub.interestedIn || '').replace(/"/g, '""')}"`,
+        `"${msg.replace(/"/g, '""')}"`,
+        `"${(sub.status || '').replace(/"/g, '""')}"`,
+        `"${(sub.adminNotes || '').replace(/"/g, '""')}"`,
+        `"${sub.createdAt ? new Date(sub.createdAt).toLocaleString() : ''}"`
+      ];
+      csvRows.push(row.join(','));
+    });
+
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `TCC_Submissions_Export_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
   };
 
   // Helper to safely extract submission message from various field name aliases
@@ -897,36 +1113,9 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
     return searchMatches && statusMatches && interestMatches && emailMatches;
   });
 
-  // CSV Export
+  // CSV Export (Full Filtered)
   const exportToCSV = () => {
-    if (filteredSubmissions.length === 0) return;
-    
-    const headers = ['First Name', 'Last Name', 'Email', 'Phone', 'Interested In', 'User Message', 'Status', 'Admin Notes', 'Date Submitted'];
-    const csvRows = [headers.join(',')];
-
-    filteredSubmissions.forEach((sub) => {
-      const msg = getSubmissionMessage(sub);
-      const row = [
-        `"${(sub.firstName || '').replace(/"/g, '""')}"`,
-        `"${(sub.lastName || '').replace(/"/g, '""')}"`,
-        `"${(sub.email || '').replace(/"/g, '""')}"`,
-        `"${(sub.phone || '').replace(/"/g, '""')}"`,
-        `"${(sub.interestedIn || '').replace(/"/g, '""')}"`,
-        `"${msg.replace(/"/g, '""')}"`,
-        `"${(sub.status || '').replace(/"/g, '""')}"`,
-        `"${(sub.adminNotes || '').replace(/"/g, '""')}"`,
-        `"${sub.createdAt ? new Date(sub.createdAt).toLocaleString() : ''}"`
-      ];
-      csvRows.push(row.join(','));
-    });
-
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `TCC_Im_New_Submissions_${new Date().toISOString().slice(0,10)}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+    exportSelectedToCSV();
   };
 
   // Metrics
@@ -1149,18 +1338,6 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
           >
             <Headphones className="w-4 h-4 text-amber-400" />
             <span>Manage Website Collateral</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('custom_forms')}
-            className={`px-6 py-3.5 font-black text-xs sm:text-sm uppercase tracking-wider rounded-t-2xl transition-all flex items-center space-x-2.5 ${
-              activeTab === 'custom_forms'
-                ? 'bg-gray-900 text-white border-t-2 border-[#a52424] shadow-lg'
-                : 'text-gray-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            <FileText className="w-4 h-4 text-blue-400" />
-            <span>Form Builder & Destinations</span>
           </button>
 
           <button
@@ -1737,11 +1914,6 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
           <WebsiteCollateralManager 
             adminEmail={currentUser?.email || adminSession?.email || 'admin@transformationcitychurch.org'} 
           />
-        ) : activeTab === 'custom_forms' ? (
-          <FormManager 
-            adminEmail={currentUser?.email || adminSession?.email || 'leonandalouw@outlook.com'} 
-            onNavigate={onNavigate} 
-          />
         ) : (
           <>
             {/* Metric Cards */}
@@ -1859,6 +2031,90 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
           </div>
         </div>
 
+        {/* SMTP Live Connectivity Diagnostics & Test Suite */}
+        <div className="bg-gray-900 border border-white/10 rounded-3xl p-5 sm:p-6 space-y-4 shadow-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center space-x-3.5">
+              <div className="p-3 bg-red-500/10 rounded-2xl border border-red-500/20 text-red-400 flex items-center justify-center">
+                <Server className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-xs sm:text-sm font-black uppercase text-white tracking-wider flex flex-wrap items-center gap-2">
+                  <span>Hostinger SMTP Outgoing Mail Server</span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-lg bg-white/5 text-gray-300 border border-white/10">
+                    smtp.hostinger.com:465/587
+                  </span>
+                </h4>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  Sender: <strong className="text-gray-200 font-mono">admin@transformationcitychurch.org</strong> • Admin Inboxes: <span className="text-red-300 font-mono">admin@... & leonandalouw@outlook.com</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-2.5 flex-shrink-0">
+              <button
+                type="button"
+                disabled={testingSmtp}
+                onClick={() => handleTestSmtpConnection(false)}
+                className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-white border border-white/10 rounded-2xl text-xs font-bold transition-all flex items-center space-x-2 disabled:opacity-50"
+              >
+                <Activity className={`w-3.5 h-3.5 text-blue-400 ${testingSmtp ? 'animate-spin' : ''}`} />
+                <span>{testingSmtp ? 'Verifying...' : 'Test Connection'}</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={testingSmtp}
+                onClick={() => handleTestSmtpConnection(true)}
+                className="px-4 py-2.5 bg-[#a52424] hover:bg-red-700 text-white rounded-2xl text-xs font-bold transition-all flex items-center space-x-2 shadow-lg shadow-red-950/40 disabled:opacity-50"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>Send Test Email</span>
+              </button>
+            </div>
+          </div>
+
+          {smtpDiagResult && (
+            <div className={`p-4 rounded-2xl border text-xs space-y-2.5 ${
+              smtpDiagResult.success
+                ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-200'
+                : 'bg-red-950/40 border-red-500/30 text-red-200'
+            }`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  {smtpDiagResult.success ? (
+                    <CheckCheck className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                  )}
+                  <span className="font-bold">
+                    {smtpDiagResult.success
+                      ? `SMTP Connection Verified & Active on Port ${smtpDiagResult.workingPort}! ${smtpDiagResult.emailSent ? 'Test email delivered to admin inboxes.' : ''}`
+                      : `SMTP Diagnostic Issue: ${smtpDiagResult.error}`}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSmtpDiagResult(null)}
+                  className="text-gray-400 hover:text-white p-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {smtpDiagResult.logs && smtpDiagResult.logs.length > 0 && (
+                <div className="bg-black/60 p-3 rounded-xl font-mono text-[11px] space-y-1 text-gray-300 max-h-40 overflow-y-auto">
+                  {smtpDiagResult.logs.map((log, idx) => (
+                    <div key={idx} className={log.includes('[SUCCESS]') || log.includes('[SENT]') ? 'text-emerald-400' : log.includes('[FAILED]') || log.includes('[FATAL') ? 'text-red-400' : 'text-gray-300'}>
+                      {log}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Data Loading or Error State */}
         {fetchError && (
           <div className="p-6 bg-red-500/10 border border-red-500/30 text-red-300 rounded-3xl flex items-center justify-between">
@@ -1872,6 +2128,104 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
             >
               Retry
             </button>
+          </div>
+        )}
+
+        {/* Action Success / Error Banner */}
+        {actionBanner && (
+          <div className={`p-4 rounded-2xl border flex items-center justify-between text-xs font-bold transition-all shadow-lg ${
+            actionBanner.type === 'success'
+              ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-200'
+              : 'bg-red-950/60 border-red-500/40 text-red-200'
+          }`}>
+            <div className="flex items-center space-x-2.5">
+              {actionBanner.type === 'success' ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+              ) : (
+                <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+              )}
+              <span>{actionBanner.message}</span>
+            </div>
+            <button
+              onClick={() => setActionBanner(null)}
+              className="text-gray-400 hover:text-white p-1"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {/* Floating / Docked Multi-Select Bulk Actions Toolbar */}
+        {selectedSubmissionIds.length > 0 && (
+          <div className="bg-gradient-to-r from-red-950/90 via-gray-900 to-gray-900 border-2 border-red-500/40 rounded-3xl p-4 sm:p-5 shadow-2xl flex flex-wrap items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center space-x-2 bg-[#a52424] text-white px-3.5 py-1.5 rounded-2xl text-xs font-black uppercase tracking-wider shadow-md shadow-red-950">
+                <CheckSquare className="w-4 h-4" />
+                <span>{selectedSubmissionIds.length} Selected</span>
+              </div>
+
+              {filteredSubmissions.length > 0 && selectedSubmissionIds.length < filteredSubmissions.length && (
+                <button
+                  type="button"
+                  onClick={handleToggleSelectAllFiltered}
+                  className="text-xs text-gray-300 hover:text-white font-bold underline px-2 py-1"
+                >
+                  Select All Filtered ({filteredSubmissions.length})
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={handleClearSelection}
+                className="text-xs text-gray-400 hover:text-white font-medium px-2 py-1"
+              >
+                Clear Selection
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              {/* Bulk Status Update */}
+              <div className="flex items-center space-x-1.5 bg-black/60 border border-white/10 px-3 py-1.5 rounded-2xl text-xs">
+                <span className="text-[10px] uppercase font-bold text-gray-400">Set Status:</span>
+                <select
+                  disabled={isBulkUpdating}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      handleBulkStatusChange(e.target.value as SubmissionStatus);
+                      e.target.value = '';
+                    }
+                  }}
+                  defaultValue=""
+                  className="bg-transparent text-white text-xs font-bold outline-none cursor-pointer"
+                >
+                  <option value="" disabled className="bg-gray-900 text-gray-400">Choose...</option>
+                  <option value="new" className="bg-gray-900 text-amber-400">● Mark New</option>
+                  <option value="contacted" className="bg-gray-900 text-blue-400">● Mark Contacted</option>
+                  <option value="followed-up" className="bg-gray-900 text-emerald-400">● Mark Followed Up</option>
+                  <option value="archived" className="bg-gray-900 text-gray-400">● Mark Archived</option>
+                </select>
+              </div>
+
+              {/* Bulk Export Selected */}
+              <button
+                type="button"
+                onClick={exportSelectedToCSV}
+                className="bg-white/5 hover:bg-white/10 text-white border border-white/10 px-3.5 py-2 rounded-2xl text-xs font-bold transition-all flex items-center space-x-1.5"
+              >
+                <Download className="w-3.5 h-3.5 text-red-400" />
+                <span>Export Selected ({selectedSubmissionIds.length})</span>
+              </button>
+
+              {/* Bulk Delete Button */}
+              <button
+                type="button"
+                onClick={promptDeleteBulk}
+                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-wider transition-all flex items-center space-x-2 shadow-lg shadow-red-950/60"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Delete Selected ({selectedSubmissionIds.length})</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -1897,6 +2251,26 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-gray-950/80 border-b border-white/10 text-[11px] font-black uppercase tracking-wider text-gray-400">
+                    <th className="py-4 px-4 w-12 text-center">
+                      <button
+                        type="button"
+                        onClick={handleToggleSelectAllFiltered}
+                        title={
+                          filteredSubmissions.length > 0 && filteredSubmissions.every(s => s.id && selectedSubmissionIds.includes(s.id))
+                            ? 'Deselect all'
+                            : 'Select all filtered'
+                        }
+                        className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                      >
+                        {filteredSubmissions.length > 0 && filteredSubmissions.every(s => s.id && selectedSubmissionIds.includes(s.id)) ? (
+                          <CheckSquare className="w-4 h-4 text-red-500" />
+                        ) : filteredSubmissions.some(s => s.id && selectedSubmissionIds.includes(s.id)) ? (
+                          <MinusSquare className="w-4 h-4 text-red-400" />
+                        ) : (
+                          <Square className="w-4 h-4 text-gray-500" />
+                        )}
+                      </button>
+                    </th>
                     <th className="py-4 px-6">Name & Details</th>
                     <th className="py-4 px-6">Captured Message / Request</th>
                     <th className="py-4 px-6">Interested In</th>
@@ -1908,6 +2282,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
                 </thead>
                 <tbody className="divide-y divide-white/5 text-sm">
                   {filteredSubmissions.map((sub) => {
+                    const isSelected = Boolean(sub.id && selectedSubmissionIds.includes(sub.id));
                     const fullName = `${sub.firstName} ${sub.lastName}`;
                     const userMsg = getSubmissionMessage(sub);
                     const dateStr = sub.createdAt ? new Date(sub.createdAt).toLocaleString(undefined, {
@@ -1919,7 +2294,28 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
                     }) : 'N/A';
 
                     return (
-                      <tr key={sub.id} className="hover:bg-white/[0.02] transition-colors group">
+                      <tr 
+                        key={sub.id} 
+                        className={`transition-colors group ${
+                          isSelected 
+                            ? 'bg-red-950/20 hover:bg-red-950/30' 
+                            : 'hover:bg-white/[0.02]'
+                        }`}
+                      >
+                        <td className="py-4 px-4 text-center">
+                          <button
+                            type="button"
+                            onClick={(e) => sub.id && handleToggleSelectOne(sub.id, e)}
+                            className="p-1 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
+                          >
+                            {isSelected ? (
+                              <CheckSquare className="w-4 h-4 text-red-500" />
+                            ) : (
+                              <Square className="w-4 h-4 text-gray-600 group-hover:text-gray-400" />
+                            )}
+                          </button>
+                        </td>
+
                         <td className="py-4 px-6">
                           <div className="font-black text-white text-base">{fullName}</div>
                           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-1 text-xs text-gray-400">
@@ -2023,9 +2419,9 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
                           </button>
                           
                           <button
-                            onClick={() => sub.id && handleDeleteSubmission(sub.id)}
+                            onClick={(e) => promptDeleteSingle(sub, e)}
                             className="bg-red-500/10 hover:bg-red-500/20 text-red-400 px-2.5 py-1.5 rounded-xl border border-red-500/20 transition-all inline-flex items-center"
-                            title="Delete submission"
+                            title="Delete submission record from database"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -2189,16 +2585,28 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
               </div>
             </div>
 
-            <div className="pt-4 border-t border-white/10 flex items-center justify-between">
-              <a
-                href={`mailto:${selectedSubmission.email}?subject=Welcome%20to%20Transformation%20City%20Church!&body=Hi%20${selectedSubmission.firstName},%0A%0AThank%20you%20for%20connecting%20with%20us%20at%20Transformation%20City%20Church!`}
-                target="_blank"
-                rel="noreferrer"
-                className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center space-x-2"
-              >
-                <Mail className="w-4 h-4" />
-                <span>Send Email to {selectedSubmission.firstName}</span>
-              </a>
+            <div className="pt-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <a
+                  href={`mailto:${selectedSubmission.email}?subject=Welcome%20to%20Transformation%20City%20Church!&body=Hi%20${selectedSubmission.firstName},%0A%0AThank%20you%20for%20connecting%20with%20us%20at%20Transformation%20City%20Church!`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center space-x-2"
+                >
+                  <Mail className="w-4 h-4" />
+                  <span>Send Email to {selectedSubmission.firstName}</span>
+                </a>
+
+                <button
+                  type="button"
+                  onClick={() => promptDeleteSingle(selectedSubmission)}
+                  className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center space-x-2"
+                  title="Permanently remove this submission from the database"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Delete Record</span>
+                </button>
+              </div>
 
               <button
                 onClick={() => setSelectedSubmission(null)}
@@ -2690,6 +3098,95 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
                 className="bg-white/10 hover:bg-white/20 text-white font-bold px-6 py-2.5 rounded-2xl text-xs uppercase"
               >
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CUSTOM IN-APP DELETE CONFIRMATION MODAL */}
+      {deleteModalState && deleteModalState.isOpen && (
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-gray-900 border-2 border-red-500/30 rounded-3xl max-w-lg w-full p-6 sm:p-8 space-y-6 shadow-2xl relative animate-in fade-in zoom-in-95 duration-150">
+            <button
+              onClick={() => !isDeletingSubmissions && setDeleteModalState(null)}
+              disabled={isDeletingSubmissions}
+              className="absolute top-6 right-6 p-2 text-gray-400 hover:text-white rounded-full bg-white/5 hover:bg-white/10 transition-colors disabled:opacity-50"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-start space-x-4">
+              <div className="p-3.5 bg-red-500/10 border border-red-500/30 rounded-2xl text-red-500 flex-shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <span className="text-[10px] font-black uppercase tracking-widest text-red-400">
+                  Firestore Permanent Removal
+                </span>
+                <h3 className="text-xl font-black text-white uppercase tracking-tight">
+                  {deleteModalState.isBulk
+                    ? `Delete ${deleteModalState.ids.length} Submissions?`
+                    : 'Delete Submission Record?'}
+                </h3>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <p className="text-xs text-gray-300 leading-relaxed">
+                {deleteModalState.isBulk
+                  ? `Are you sure you want to permanently delete these ${deleteModalState.ids.length} submission records from the Firestore database? This action is irreversible.`
+                  : `Are you sure you want to permanently delete this submission record from the Firestore database? This action is irreversible.`}
+              </p>
+
+              {deleteModalState.names && deleteModalState.names.length > 0 && (
+                <div className="bg-black/50 border border-white/10 rounded-2xl p-3.5 max-h-36 overflow-y-auto space-y-1.5 font-mono text-[11px] text-gray-300">
+                  {deleteModalState.names.slice(0, 6).map((name, i) => (
+                    <div key={i} className="flex items-center space-x-2 text-gray-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 flex-shrink-0" />
+                      <span className="truncate">{name}</span>
+                    </div>
+                  ))}
+                  {deleteModalState.names.length > 6 && (
+                    <div className="text-gray-500 italic text-[10px] pt-1">
+                      ... and {deleteModalState.names.length - 6} more submissions
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="pt-4 border-t border-white/10 flex items-center justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => setDeleteModalState(null)}
+                disabled={isDeletingSubmissions}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={confirmAndExecuteDelete}
+                disabled={isDeletingSubmissions}
+                className="px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider text-white bg-red-600 hover:bg-red-700 transition-all flex items-center space-x-2 shadow-lg shadow-red-950/60 disabled:opacity-50"
+              >
+                {isDeletingSubmissions ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
+                    <span>Deleting from DB...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>
+                      {deleteModalState.isBulk
+                        ? `Delete ${deleteModalState.ids.length} Submissions`
+                        : 'Delete Permanently'}
+                    </span>
+                  </>
+                )}
               </button>
             </div>
           </div>

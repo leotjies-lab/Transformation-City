@@ -31,39 +31,156 @@ function getSmtpCredentials() {
   };
 }
 
-async function createTransporter(customPort?: number) {
+async function createTransporter(customPort?: number, customSecure?: boolean) {
   const creds = getSmtpCredentials();
   const port = customPort || creds.port;
-  const isSecure = port === 465;
+  const isSecure = customSecure !== undefined ? customSecure : port === 465;
 
   return nodemailer.createTransport({
     host: creds.host,
     port: port,
-    secure: isSecure, // true for 465, false for 587
+    secure: isSecure, // true for 465 (SSL), false for 587 (STARTTLS)
     auth: {
       user: creds.user,
       pass: creds.pass,
     },
     tls: {
-      rejectUnauthorized: false, // Prevents certificate verification failures on custom domains
+      rejectUnauthorized: false, // Prevents certificate verification failures on custom domains / reverse proxies
+      minVersion: "TLSv1.2",
     },
+    connectionTimeout: 10000, // 10 seconds connection timeout
+    greetingTimeout: 10000,   // 10 seconds greeting timeout
+    socketTimeout: 15000,     // 15 seconds socket timeout
   });
 }
 
 // API Health & SMTP Status Check
 app.get("/api/health", (req, res) => {
+  res.setHeader("Content-Type", "application/json");
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
 app.get("/api/smtp-status", (req, res) => {
+  res.setHeader("Content-Type", "application/json");
   const creds = getSmtpCredentials();
   res.json({
     configured: true,
     host: creds.host,
+    port: creds.port,
     user: creds.user,
     from: creds.from,
     recipients: ["admin@transformationcitychurch.org", "leonandalouw@outlook.com"]
   });
+});
+
+// Dedicated SMTP Live Test & Diagnostic Route
+app.post("/api/test-smtp", async (req, res) => {
+  res.setHeader("Content-Type", "application/json");
+  const { testRecipient, sendActualEmail } = req.body || {};
+  const creds = getSmtpCredentials();
+  const diagnosticLogs: string[] = [];
+
+  const recipient = testRecipient || "admin@transformationcitychurch.org";
+
+  try {
+    diagnosticLogs.push(`Testing Hostinger SMTP server at ${creds.host}...`);
+    diagnosticLogs.push(`Authenticating user: ${creds.user}`);
+
+    let activeTransporter: nodemailer.Transporter | null = null;
+    let workingPort = creds.port;
+    let authVerified = false;
+
+    // Test primary port (465 SSL)
+    try {
+      diagnosticLogs.push(`Attempt 1: Verifying SSL connection on port ${creds.port}...`);
+      const trans465 = await createTransporter(creds.port, creds.port === 465);
+      await trans465.verify();
+      diagnosticLogs.push(`[SUCCESS] Port ${creds.port} verified and authenticated successfully!`);
+      activeTransporter = trans465;
+      workingPort = creds.port;
+      authVerified = true;
+    } catch (err465: any) {
+      diagnosticLogs.push(`[WARNING] Port ${creds.port} verification failed: ${err465.message}`);
+      
+      // Attempt fallback port (587 STARTTLS)
+      const fallbackPort = creds.port === 465 ? 587 : 465;
+      diagnosticLogs.push(`Attempt 2: Retrying connection with STARTTLS on port ${fallbackPort}...`);
+      try {
+        const transFallback = await createTransporter(fallbackPort, fallbackPort === 465);
+        await transFallback.verify();
+        diagnosticLogs.push(`[SUCCESS] Fallback port ${fallbackPort} verified and authenticated successfully!`);
+        activeTransporter = transFallback;
+        workingPort = fallbackPort;
+        authVerified = true;
+      } catch (errFallback: any) {
+        diagnosticLogs.push(`[FAILED] Fallback port ${fallbackPort} also failed: ${errFallback.message}`);
+      }
+    }
+
+    if (!activeTransporter || !authVerified) {
+      return res.status(500).json({
+        success: false,
+        error: "SMTP connection/authentication failed on both port 465 and 587.",
+        logs: diagnosticLogs,
+        smtpConfig: {
+          host: creds.host,
+          user: creds.user,
+          port: creds.port,
+        },
+      });
+    }
+
+    let emailSent = false;
+    let messageId = null;
+
+    if (sendActualEmail) {
+      diagnosticLogs.push(`Sending diagnostic test email to: ${recipient}...`);
+      const testMail = await activeTransporter.sendMail({
+        from: creds.from,
+        to: recipient,
+        subject: `[TCC SMTP Test] Hostinger Mail Verification (${new Date().toLocaleTimeString()})`,
+        text: `This is a test notification from Transformation City Church website backend.\nHost: ${creds.host}\nPort: ${workingPort}\nUser: ${creds.user}\nTimestamp: ${new Date().toISOString()}`,
+        html: `
+          <div style="font-family: sans-serif; padding: 20px; background-color: #f8fafc; border-radius: 8px;">
+            <h2 style="color: #a52424; margin-top: 0;">Transformation City Church - SMTP Test</h2>
+            <p>Your SMTP mail dispatch system on <strong>${creds.host}</strong> is active and communicating properly.</p>
+            <ul style="color: #334155; line-height: 1.6;">
+              <li><strong>Host:</strong> ${creds.host}</li>
+              <li><strong>Active Working Port:</strong> ${workingPort}</li>
+              <li><strong>Sender User:</strong> ${creds.user}</li>
+              <li><strong>Dispatched To:</strong> ${recipient}</li>
+              <li><strong>Time:</strong> ${new Date().toLocaleString()}</li>
+            </ul>
+            <p style="color: #15803d; font-weight: bold;">Status: All email notifications are operational.</p>
+          </div>
+        `,
+      });
+      emailSent = true;
+      messageId = testMail.messageId;
+      diagnosticLogs.push(`[SENT] Test email sent successfully! MessageId: ${messageId}`);
+    }
+
+    return res.status(200).json({
+      success: true,
+      authVerified: true,
+      workingPort,
+      emailSent,
+      messageId,
+      logs: diagnosticLogs,
+      smtpConfig: {
+        host: creds.host,
+        user: creds.user,
+        activePort: workingPort,
+      },
+    });
+  } catch (outerErr: any) {
+    diagnosticLogs.push(`[FATAL ERROR]: ${outerErr.message}`);
+    return res.status(500).json({
+      success: false,
+      error: outerErr.message || "Failed to test SMTP",
+      logs: diagnosticLogs,
+    });
+  }
 });
 
 // Helper to determine file category and MIME types

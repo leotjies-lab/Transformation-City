@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { collection, addDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { CheckCircle, Loader2, ChevronDown, Check, X, Sparkles } from 'lucide-react';
+import { safeFetchJson } from '../utils/apiHelper';
 
 const INTERESTED_OPTIONS = [
   'Join Our Family',
@@ -76,61 +77,44 @@ const NextSteps: React.FC = () => {
         createdAt: new Date().toISOString(),
       };
 
-      // 1. Save to general submissions collection
-      const docRef1 = await addDoc(collection(db, 'submissions'), submissionPayload);
+      // 1. Save to submissions collection
+      const docRef = await addDoc(collection(db, 'submissions'), submissionPayload);
 
-      // 2. Save to custom_submissions collection with destination email leonandalouw@outlook.com
-      const customPayload = {
-        formId: 'start_the_journey',
-        formTitle: 'Start The Journey - Next Steps',
-        ownerEmail: 'leonandalouw@outlook.com',
-        destination: 'save_and_email',
-        answers: {
-          'First Name': firstName.trim(),
-          'Last Name': lastName.trim(),
-          'Email Address': email.trim().toLowerCase(),
-          'Phone Number': phone.trim(),
-          'Interested In': interestedInStr,
-          'Message / Notes': trimmedMessage || 'None'
-        },
-        status: 'new',
-        emailDeliveryStatus: 'pending',
-        createdAt: new Date().toISOString()
-      };
-
-      const docRef2 = await addDoc(collection(db, 'custom_submissions'), customPayload);
-
-      // 3. Dispatch to backend API to email form administrator (leonandalouw@outlook.com & admin@transformationcitychurch.org)
+      // 2. Dispatch to backend API to email church administrators
       try {
-        const res = await fetch('/api/submit-form', {
+        const res = await safeFetchJson('/api/submit-form', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            formId: 'start_the_journey',
-            formTitle: 'Start The Journey - Next Steps',
-            ownerEmail: 'leonandalouw@outlook.com',
+            formTitle: 'Start The Journey - Connection Card',
+            ownerEmail: 'admin@transformationcitychurch.org',
             destination: 'save_and_email',
-            answers: customPayload.answers,
-            createdAt: customPayload.createdAt,
+            answers: {
+              'First Name': firstName.trim(),
+              'Last Name': lastName.trim(),
+              'Email Address': email.trim().toLowerCase(),
+              'Phone Number': phone.trim() || 'Not provided',
+              'Interested In': interestedInStr,
+              'Message / Notes': trimmedMessage || 'None'
+            },
+            createdAt: submissionPayload.createdAt,
           }),
         });
 
-        const resData = await res.json();
-        if (res.ok && resData.success) {
+        if (res.ok && res.data?.success) {
           const sentUpdate = {
             emailDeliveryStatus: 'sent',
             emailDispatchedAt: new Date().toISOString(),
-            emailMessageId: resData.messageId || null
+            emailMessageId: res.data.messageId || null,
+            emailError: null
           };
-          await updateDoc(doc(db, 'submissions', docRef1.id), sentUpdate).catch(() => {});
-          await updateDoc(doc(db, 'custom_submissions', docRef2.id), sentUpdate).catch(() => {});
+          await updateDoc(doc(db, 'submissions', docRef.id), sentUpdate).catch(() => {});
         } else {
           const failUpdate = {
             emailDeliveryStatus: 'failed',
-            emailError: resData.error || 'API returned failure'
+            emailError: res.error || res.data?.error || 'API returned failure'
           };
-          await updateDoc(doc(db, 'submissions', docRef1.id), failUpdate).catch(() => {});
-          await updateDoc(doc(db, 'custom_submissions', docRef2.id), failUpdate).catch(() => {});
+          await updateDoc(doc(db, 'submissions', docRef.id), failUpdate).catch(() => {});
         }
       } catch (apiErr: any) {
         console.warn('Backend email dispatch warning:', apiErr);
@@ -138,8 +122,7 @@ const NextSteps: React.FC = () => {
           emailDeliveryStatus: 'failed',
           emailError: apiErr.message || 'Network dispatch error'
         };
-        await updateDoc(doc(db, 'submissions', docRef1.id), failUpdate).catch(() => {});
-        await updateDoc(doc(db, 'custom_submissions', docRef2.id), failUpdate).catch(() => {});
+        await updateDoc(doc(db, 'submissions', docRef.id), failUpdate).catch(() => {});
       }
 
       setIsSubmitting(false);

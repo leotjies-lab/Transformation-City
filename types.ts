@@ -23,48 +23,6 @@ export type EmailDeliveryStatus = 'sent' | 'failed' | 'pending' | 'submitted_onl
 
 export type SubmissionStatus = 'new' | 'contacted' | 'followed-up' | 'archived';
 
-export type FormFieldType = 'text' | 'textarea' | 'email' | 'phone' | 'select' | 'checkbox' | 'radio' | 'date';
-
-export interface FormField {
-  id: string;
-  label: string;
-  type: FormFieldType;
-  placeholder?: string;
-  required: boolean;
-  options?: string[];
-  helpText?: string;
-}
-
-export type FormDestination = 'save' | 'email' | 'save_and_email';
-
-export interface CustomForm {
-  id?: string;
-  title: string;
-  description?: string;
-  ownerEmail: string;
-  destination: FormDestination;
-  fields: FormField[];
-  active: boolean;
-  createdAt: string;
-  updatedAt?: string;
-}
-
-export interface CustomFormSubmission {
-  id?: string;
-  formId: string;
-  formTitle: string;
-  ownerEmail?: string;
-  destination?: FormDestination;
-  answers: Record<string, any>; // field id or label -> submitted value
-  status: SubmissionStatus;
-  emailDeliveryStatus?: EmailDeliveryStatus;
-  emailDispatchedAt?: string;
-  emailError?: string;
-  emailMessageId?: string;
-  adminNotes?: string;
-  createdAt: string;
-}
-
 export interface FormSubmission {
   id?: string;
   firstName: string;
