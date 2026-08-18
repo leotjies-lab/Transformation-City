@@ -44,6 +44,9 @@ async function createTransporter(customPort?: number, customSecure?: boolean) {
       user: creds.user,
       pass: creds.pass,
     },
+    tls: {
+      rejectUnauthorized: false, // Prevents certificate verification failures on custom domains
+    },
     connectionTimeout: 10000, // 10 seconds connection timeout
     greetingTimeout: 10000,   // 10 seconds greeting timeout
     socketTimeout: 15000,     // 15 seconds socket timeout
@@ -361,84 +364,147 @@ app.get("/api/audio-download", async (req, res) => {
   }
 });
 
-// Form Submission API - saves to database & dispatches emails via Hostinger SMTP
+// Endpoint to receive form submission and dispatch email to administrator
 app.post("/api/submit-form", async (req, res) => {
   res.setHeader("Content-Type", "application/json");
-  const { formType, title, data, submittedAt, clientInfo } = req.body || {};
-
-  if (!data || typeof data !== "object") {
-    return res.status(400).json({
-      success: false,
-      error: "Invalid request payload: 'data' object is required.",
-    });
-  }
-
-  const creds = getSmtpCredentials();
-  const recipientsList = ["admin@transformationcitychurch.org", "leonandalouw@outlook.com"];
-  const recipientString = recipientsList.join(", ");
-
   try {
-    const transporter = await createTransporter();
+    const {
+      formTitle,
+      title,
+      formType,
+      ownerEmail,
+      answers,
+      data,
+      destination,
+      createdAt,
+      submittedAt,
+      formId,
+    } = req.body || {};
 
-    // Format data rows into an HTML table
-    const dataRows = Object.entries(data)
-      .map(([key, val]) => {
-        const formattedKey = key
-          .replace(/([A-Z])/g, " $1")
-          .replace(/^./, (str) => str.toUpperCase());
-        const formattedVal = Array.isArray(val) ? val.join(", ") : String(val ?? "");
-        return `
-          <tr>
-            <td style="padding: 10px 14px; border: 1px solid #e5e7eb; font-weight: 600; color: #374151; background: #f9fafb; width: 35%;">${formattedKey}</td>
-            <td style="padding: 10px 14px; border: 1px solid #e5e7eb; color: #111827;">${formattedVal || "<em>Not provided</em>"}</td>
-          </tr>
-        `;
-      })
-      .join("");
+    const rawData = answers || data;
+    if (!rawData || typeof rawData !== "object") {
+      return res.status(400).json({
+        success: false,
+        error: "Invalid request payload: 'answers' or 'data' object is required.",
+      });
+    }
 
-    const subject = `[TCC Submission] ${title || formType || "New Form Entry"} - ${data.fullName || data.name || "Member"}`;
+    // Collect all admin recipients
+    const rawRecipients = [
+      "admin@transformationcitychurch.org",
+      ownerEmail,
+      "leonandalouw@outlook.com",
+    ];
+    const recipientsList = Array.from(new Set(rawRecipients.filter(Boolean)));
+    const recipientString = recipientsList.join(", ");
 
-    const htmlContent = `
-      <div style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px; background: #ffffff;">
-        <div style="background: #111827; padding: 20px 24px; border-radius: 8px; margin-bottom: 24px;">
-          <h2 style="color: #ffffff; margin: 0; font-size: 22px;">Transformation City Church</h2>
-          <p style="color: #d1d5db; margin: 4px 0 0 0; font-size: 14px;">${title || "Website Form Submission"}</p>
+    const displayTitle = formTitle || title || formType || "Transformation City Church Form";
+    const timestamp = createdAt || submittedAt || new Date().toISOString();
+    const formattedDate = new Date(timestamp).toLocaleString("en-ZA", { timeZone: "Africa/Johannesburg" });
+
+    // Format fields into clean HTML table and plain text
+    let fieldsText = "";
+    let fieldsHtml = "";
+
+    Object.entries(rawData).forEach(([key, value]) => {
+      const displayKey = key
+        .replace(/([A-Z])/g, " $1")
+        .replace(/^./, (str) => str.toUpperCase());
+      const displayVal = Array.isArray(value) ? value.join(", ") : String(value ?? "");
+      fieldsText += `- ${displayKey}: ${displayVal}\n`;
+      fieldsHtml += `
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 10px 14px; font-weight: bold; color: #1e293b; background-color: #f8fafc; width: 35%; border-right: 1px solid #e2e8f0;">${displayKey}</td>
+          <td style="padding: 10px 14px; color: #334155;">${displayVal || '<em style="color:#94a3b8">N/A</em>'}</td>
+        </tr>
+      `;
+    });
+
+    const emailSubject = `[TCC Form Submission] ${displayTitle}`;
+
+    const htmlBody = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>${displayTitle}</title>
+      </head>
+      <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f1f5f9; padding: 24px; margin: 0;">
+        <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e2e8f0;">
+          <div style="background-color: #a52424; padding: 24px; text-align: center;">
+            <h1 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase;">
+              Transformation City Church
+            </h1>
+            <p style="color: #fecdd3; margin: 4px 0 0 0; font-size: 13px;">Form Submission Notification</p>
+          </div>
+          <div style="padding: 24px;">
+            <div style="margin-bottom: 20px; padding: 12px 16px; background-color: #fff1f2; border-left: 4px solid #a52424; border-radius: 4px;">
+              <h2 style="margin: 0 0 4px 0; font-size: 16px; color: #881337;">${displayTitle}</h2>
+              <p style="margin: 0; font-size: 12px; color: #9f1239;">Submitted on ${formattedDate}</p>
+            </div>
+            <table style="width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 14px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+              <thead>
+                <tr style="background-color: #0f172a; color: #ffffff;">
+                  <th style="padding: 10px 14px; text-align: left; font-size: 12px; text-transform: uppercase;">Field</th>
+                  <th style="padding: 10px 14px; text-align: left; font-size: 12px; text-transform: uppercase;">Submitted Response</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${fieldsHtml}
+              </tbody>
+            </table>
+            <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; text-align: center;">
+              Target Admin Recipients: <strong>${recipientString}</strong><br/>
+              Transformation City Church Automated Form Notification
+            </div>
+          </div>
         </div>
-
-        <p style="color: #374151; font-size: 15px; line-height: 1.6; margin-bottom: 20px;">
-          A new form submission was received on the church website (<strong>tcchurch.co.za</strong>).
-        </p>
-
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 14px;">
-          ${dataRows}
-          <tr>
-            <td style="padding: 10px 14px; border: 1px solid #e5e7eb; font-weight: 600; color: #374151; background: #f9fafb;">Submission Date</td>
-            <td style="padding: 10px 14px; border: 1px solid #e5e7eb; color: #111827;">${submittedAt ? new Date(submittedAt).toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg' }) : new Date().toLocaleString('en-ZA', { timeZone: 'Africa/Johannesburg' })}</td>
-          </tr>
-        </table>
-
-        <div style="padding: 14px; background: #f3f4f6; border-radius: 6px; font-size: 12px; color: #6b7280; text-align: center;">
-          Sent automatically from Transformation City Church Web Portal.
-        </div>
-      </div>
+      </body>
+      </html>
     `;
 
-    const info = await transporter.sendMail({
+    const plainTextBody = `
+NEW FORM SUBMISSION: ${displayTitle}
+Submitted at: ${formattedDate}
+Recipients: ${recipientString}
+
+---------------------------------------------------
+RESPONSES:
+${fieldsText}
+---------------------------------------------------
+Transformation City Church Form System
+    `;
+
+    const creds = getSmtpCredentials();
+    const mailOptions = {
       from: creds.from,
       to: recipientString,
-      subject: subject,
-      html: htmlContent,
-      replyTo: data.email || undefined,
-    });
+      subject: emailSubject,
+      text: plainTextBody,
+      html: htmlBody,
+      replyTo: (rawData as any).email || (rawData as any)['Email Address'] || (rawData as any)['Email'] || undefined,
+    };
 
-    console.log(`[Form Dispatch] Sent email for "${title}" to [${recipientString}]. MessageId:`, info.messageId || "N/A");
+    let info: any = null;
+    try {
+      // Try primary port (465 SSL)
+      const primaryTransporter = await createTransporter(creds.port, creds.port === 465);
+      info = await primaryTransporter.sendMail(mailOptions);
+    } catch (primaryErr: any) {
+      console.warn(`[Form Dispatch Warning] Port ${creds.port} failed (${primaryErr.message}). Retrying with STARTTLS on port 587...`);
+      // Fallback to port 587 STARTTLS
+      const fallbackTransporter = await createTransporter(587, false);
+      info = await fallbackTransporter.sendMail(mailOptions);
+    }
+
+    console.log(`[Form Dispatch] Sent email for "${displayTitle}" to [${recipientString}]. MessageId:`, info?.messageId || "N/A");
 
     return res.status(200).json({
       success: true,
       message: `Form submitted and email dispatched via Hostinger SMTP to ${recipientString}`,
       recipients: recipientsList,
       smtpConfigured: true,
-      messageId: info.messageId || null,
+      messageId: info?.messageId || null,
     });
   } catch (err: any) {
     console.error("[Form Submission API Error]:", err);
