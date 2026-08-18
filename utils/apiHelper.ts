@@ -56,6 +56,32 @@ export async function safeFetchJson<T = any>(
     const isHtml = rawText.trim().startsWith('<') || contentType.includes('text/html');
 
     if (isHtml) {
+      // If we called /api/submit-form and got HTML, attempt fallback to /submit-form.php if on shared/PHP hosting
+      if (url.includes('/api/submit-form') && !url.includes('.php')) {
+        try {
+          const phpRes = await fetch('/submit-form.php', {
+            ...options,
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+              ...(options?.headers || {}),
+            },
+          });
+          const phpContentType = phpRes.headers.get('content-type') || '';
+          if (phpContentType.includes('application/json')) {
+            const phpData = await phpRes.json();
+            return {
+              ok: phpRes.ok,
+              status: phpRes.status,
+              data: phpData,
+              error: phpRes.ok ? null : (phpData?.error || 'PHP form endpoint error'),
+            };
+          }
+        } catch {
+          // Ignore and proceed to standard message
+        }
+      }
+
       if (res.status === 404 || rawText.includes('<!DOCTYPE') || rawText.includes('<html')) {
         return {
           ok: false,
