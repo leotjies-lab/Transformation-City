@@ -480,8 +480,8 @@ async function startServer() {
     });
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*all", (req, res) => {
+    app.use(express.static(distPath, { maxAge: "1d", index: false }));
+    app.use((req, res) => {
       if (req.originalUrl.startsWith("/api/")) {
         return res.status(404).json({ success: false, error: "API route not found" });
       }
@@ -490,7 +490,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://0.0.0.0:${PORT}`);
+    console.log(`Transformation City Church server running on http://0.0.0.0:${PORT}`);
   });
 }
 
