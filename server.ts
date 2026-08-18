@@ -5,7 +5,7 @@ import nodemailer from "nodemailer";
 import { Readable } from "stream";
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = 3000;
 
 app.use(express.json());
 
@@ -73,10 +73,11 @@ app.get("/api/smtp-status", (req, res) => {
   });
 });
 
-// Dedicated SMTP Live Test & Diagnostic Route
-app.post("/api/test-smtp", async (req, res) => {
+// Dedicated SMTP Live Test & Diagnostic Route (Supports both GET and POST)
+async function handleTestSmtp(req: express.Request, res: express.Response) {
   res.setHeader("Content-Type", "application/json");
-  const { testRecipient, sendActualEmail } = req.body || {};
+  const testRecipient = req.body?.testRecipient || (req.query?.recipient as string) || (req.query?.testRecipient as string);
+  const sendActualEmail = Boolean(req.body?.sendActualEmail || req.query?.sendEmail === "true" || req.query?.sendActualEmail === "true");
   const creds = getSmtpCredentials();
   const diagnosticLogs: string[] = [];
 
@@ -181,7 +182,10 @@ app.post("/api/test-smtp", async (req, res) => {
       logs: diagnosticLogs,
     });
   }
-});
+}
+
+app.get("/api/test-smtp", handleTestSmtp);
+app.post("/api/test-smtp", handleTestSmtp);
 
 // Helper to determine file category and MIME types
 function getFileCategoryAndMime(fileName: string, rawMime?: string | null): { category: 'audio' | 'notes' | 'video' | 'other'; mimeType: string; isAudio: boolean; isNotes: boolean } {
@@ -1001,6 +1005,14 @@ Transformation City Church Form System
   }
 });
 
+// Explicit API 404 handler - prevents any unhandled /api/* request from falling through to SPA HTML
+app.use("/api", (req, res) => {
+  res.status(404).json({
+    success: false,
+    error: `API endpoint ${req.method} ${req.originalUrl} not found`,
+  });
+});
+
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
@@ -1011,7 +1023,7 @@ async function startServer() {
     app.use(vite.middlewares);
     app.use(async (req, res, next) => {
       if (req.originalUrl.startsWith("/api/")) {
-        return next();
+        return res.status(404).json({ success: false, error: "API route not found" });
       }
       try {
         let template = fs.readFileSync(path.resolve(process.cwd(), "index.html"), "utf-8");
@@ -1025,9 +1037,9 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.use((req, res) => {
+    app.get("*all", (req, res) => {
       if (req.originalUrl.startsWith("/api/")) {
-        return res.status(404).json({ error: "API route not found" });
+        return res.status(404).json({ success: false, error: "API route not found" });
       }
       res.sendFile(path.join(distPath, "index.html"));
     });
