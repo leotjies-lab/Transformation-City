@@ -40,8 +40,8 @@ const INITIAL_SAMPLE_SERMONS: Sermon[] = [
     audioLength: '48:15',
     description: 'An empowering message on managing resources God\'s way, breaking greed, and walking in biblical stewardship.',
     scripture: '1 Timothy 6:10, Matthew 6:24',
-    audioUrl: '/api/drive/stream/16YLr7CLZmgTyFdxZSsOgbwjl8QvL1W8o',
-    downloadUrl: '/api/drive/download/16YLr7CLZmgTyFdxZSsOgbwjl8QvL1W8o?filename=2026_07_19_Biblical%20perspective%20on%20money.mp3',
+    audioUrl: 'https://docs.google.com/uc?export=open&id=16YLr7CLZmgTyFdxZSsOgbwjl8QvL1W8o',
+    downloadUrl: 'https://drive.google.com/uc?export=download&id=16YLr7CLZmgTyFdxZSsOgbwjl8QvL1W8o',
     driveFileId: '16YLr7CLZmgTyFdxZSsOgbwjl8QvL1W8o',
     driveFileName: '2026_07_19_Biblical perspective on money.mp3',
     driveWebViewLink: 'https://drive.google.com/drive/folders/1qi4li-RY2flBnRt6wLfnpXpu4JeY_yVM',
@@ -57,8 +57,8 @@ const INITIAL_SAMPLE_SERMONS: Sermon[] = [
     audioLength: '52:10',
     description: 'Part 4 of the foundational teaching on walking in the ancient paths of righteousness and covenant faith.',
     scripture: 'Jeremiah 6:16, Psalm 25:4-5',
-    audioUrl: '/api/drive/stream/18tH_SH0kTCwTp7Ma49rW6k0s1RMeqGqm',
-    downloadUrl: '/api/drive/download/18tH_SH0kTCwTp7Ma49rW6k0s1RMeqGqm?filename=2026_06_28_The%20ancient%20path%20part%204.mp3',
+    audioUrl: 'https://docs.google.com/uc?export=open&id=18tH_SH0kTCwTp7Ma49rW6k0s1RMeqGqm',
+    downloadUrl: 'https://drive.google.com/uc?export=download&id=18tH_SH0kTCwTp7Ma49rW6k0s1RMeqGqm',
     driveFileId: '18tH_SH0kTCwTp7Ma49rW6k0s1RMeqGqm',
     driveFileName: '2026_06_28_The ancient path part 4.mp3',
     driveWebViewLink: 'https://drive.google.com/drive/folders/1qi4li-RY2flBnRt6wLfnpXpu4JeY_yVM',
@@ -74,8 +74,8 @@ const INITIAL_SAMPLE_SERMONS: Sermon[] = [
     audioLength: '46:30',
     description: 'Exploring spiritual intimacy, covenant alignment, and standing firm in God\'s promises.',
     scripture: 'Hebrews 10:23, Psalm 119:105',
-    audioUrl: '/api/drive/stream/12PYuGlFdS3KLWto8S18LeMtupkdNJGjv',
-    downloadUrl: '/api/drive/download/12PYuGlFdS3KLWto8S18LeMtupkdNJGjv?filename=2026_06_14_The%20ancient%20path%20part%203.mp3',
+    audioUrl: 'https://docs.google.com/uc?export=open&id=12PYuGlFdS3KLWto8S18LeMtupkdNJGjv',
+    downloadUrl: 'https://drive.google.com/uc?export=download&id=12PYuGlFdS3KLWto8S18LeMtupkdNJGjv',
     driveFileId: '12PYuGlFdS3KLWto8S18LeMtupkdNJGjv',
     driveFileName: '2026_06_14_The ancient path part 3.mp3',
     driveWebViewLink: 'https://drive.google.com/drive/folders/1qi4li-RY2flBnRt6wLfnpXpu4JeY_yVM',
@@ -91,8 +91,8 @@ const INITIAL_SAMPLE_SERMONS: Sermon[] = [
     audioLength: '44:00',
     description: 'Understanding God\'s blueprint for life, worship, and spiritual maturity in daily living.',
     scripture: 'Proverbs 3:5-6, Isaiah 30:21',
-    audioUrl: '/api/drive/stream/1ReJxmN-zXchGunyr_6v0SqZrk_ZhA1nz',
-    downloadUrl: '/api/drive/download/1ReJxmN-zXchGunyr_6v0SqZrk_ZhA1nz?filename=2026_06_14_The%20ancient%20path%20part%202.mp3',
+    audioUrl: 'https://docs.google.com/uc?export=open&id=1ReJxmN-zXchGunyr_6v0SqZrk_ZhA1nz',
+    downloadUrl: 'https://drive.google.com/uc?export=download&id=1ReJxmN-zXchGunyr_6v0SqZrk_ZhA1nz',
     driveFileId: '1ReJxmN-zXchGunyr_6v0SqZrk_ZhA1nz',
     driveFileName: '2026_06_14_The ancient path part 2.mp3',
     driveWebViewLink: 'https://drive.google.com/drive/folders/1qi4li-RY2flBnRt6wLfnpXpu4JeY_yVM',
@@ -108,8 +108,8 @@ const INITIAL_SAMPLE_SERMONS: Sermon[] = [
     audioLength: '41:20',
     description: 'The series premiere introducing the ancient paths of devotion, prayer, and kingdom authority.',
     scripture: 'Jeremiah 6:16, Matthew 7:24-27',
-    audioUrl: '/api/drive/stream/1a-2WVQXSWHL1oOx0b2GTUwKnXG4oPhT7',
-    downloadUrl: '/api/drive/download/1a-2WVQXSWHL1oOx0b2GTUwKnXG4oPhT7?filename=2026_06_07_The%20ancient%20path.mp3',
+    audioUrl: 'https://docs.google.com/uc?export=open&id=1a-2WVQXSWHL1oOx0b2GTUwKnXG4oPhT7',
+    downloadUrl: 'https://drive.google.com/uc?export=download&id=1a-2WVQXSWHL1oOx0b2GTUwKnXG4oPhT7',
     driveFileId: '1a-2WVQXSWHL1oOx0b2GTUwKnXG4oPhT7',
     driveFileName: '2026_06_07_The ancient path.mp3',
     driveWebViewLink: 'https://drive.google.com/drive/folders/1qi4li-RY2flBnRt6wLfnpXpu4JeY_yVM',
@@ -188,29 +188,18 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
     }
   }, []);
 
-  // Helper to resolve streamable audio source (handles Google Drive URLs and proxy routing)
+  // Helper to resolve streamable audio source
   const resolveStreamableAudioUrl = (sermon: Sermon): string => {
     if (sermon.driveFileId) {
-      return `/api/drive/stream/${sermon.driveFileId}`;
-    }
-    if (sermon.driveFileName) {
-      return `/api/drive/stream-by-name?filename=${encodeURIComponent(sermon.driveFileName)}`;
+      return `https://docs.google.com/uc?export=open&id=${sermon.driveFileId}`;
     }
     const url = sermon.audioUrl || '';
     if (!url) return '';
 
-    // If it's already an app-relative stream URL
-    if (url.startsWith('/api/')) return url;
-
     // Check if Google Drive file ID is inside URL
     const driveMatch = url.match(/(?:id=|\/d\/|file\/d\/)([a-zA-Z0-9_-]{25,})/);
     if (driveMatch && driveMatch[1]) {
-      return `/api/drive/stream/${driveMatch[1]}`;
-    }
-
-    // For any external URL, proxy it to guarantee proper CORS and audio content-type
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      return `/api/audio-proxy?url=${encodeURIComponent(url)}`;
+      return `https://docs.google.com/uc?export=open&id=${driveMatch[1]}`;
     }
 
     return url;
@@ -218,15 +207,8 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
 
   // Helper to resolve direct attachment download URL (forces immediate file download)
   const resolveDirectDownloadUrl = (sermon: Sermon): string => {
-    // Priority: 1) Exact Google Drive filename, 2) Title string
-    const targetFileName = sermon.driveFileName || (sermon.title ? `${sermon.title}.mp3` : 'sermon.mp3');
-
     if (sermon.driveFileId) {
-      return `/api/drive/download/${sermon.driveFileId}?filename=${encodeURIComponent(targetFileName)}`;
-    }
-
-    if (sermon.driveFileName) {
-      return `/api/drive/download-by-name?filename=${encodeURIComponent(sermon.driveFileName)}`;
+      return `https://drive.google.com/uc?export=download&id=${sermon.driveFileId}`;
     }
 
     const rawUrl = sermon.downloadUrl || sermon.audioUrl || '';
@@ -235,12 +217,7 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
     // Check if URL contains Google Drive file ID
     const driveMatch = rawUrl.match(/(?:id=|\/d\/|file\/d\/)([a-zA-Z0-9_-]{25,})/);
     if (driveMatch && driveMatch[1]) {
-      return `/api/drive/download/${driveMatch[1]}?filename=${encodeURIComponent(targetFileName)}`;
-    }
-
-    // Proxy external URLs so Content-Disposition: attachment is enforced
-    if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
-      return `/api/audio-download?url=${encodeURIComponent(rawUrl)}&filename=${encodeURIComponent(targetFileName)}`;
+      return `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
     }
 
     return rawUrl;
@@ -249,23 +226,27 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
   // Helper to resolve Notes View URL
   const resolveNotesViewUrl = (sermon: Sermon): string => {
     if (sermon.notesDriveFileId) {
-      return `/api/drive/notes/view/${sermon.notesDriveFileId}?filename=${encodeURIComponent(sermon.notesFileName || 'notes.pdf')}`;
+      return `https://drive.google.com/file/d/${sermon.notesDriveFileId}/view?usp=sharing`;
     }
-    if (sermon.notesFileName) {
-      return `/api/drive/notes/view-by-name?filename=${encodeURIComponent(sermon.notesFileName)}`;
+    const raw = sermon.notesUrl || '';
+    const driveMatch = raw.match(/(?:id=|\/d\/|file\/d\/)([a-zA-Z0-9_-]{25,})/);
+    if (driveMatch && driveMatch[1]) {
+      return `https://drive.google.com/file/d/${driveMatch[1]}/view?usp=sharing`;
     }
-    return sermon.notesUrl || '';
+    return raw;
   };
 
   // Helper to resolve Notes Download URL
   const resolveNotesDownloadUrl = (sermon: Sermon): string => {
     if (sermon.notesDriveFileId) {
-      return `/api/drive/notes/download/${sermon.notesDriveFileId}?filename=${encodeURIComponent(sermon.notesFileName || 'notes.pdf')}`;
+      return `https://drive.google.com/uc?export=download&id=${sermon.notesDriveFileId}`;
     }
-    if (sermon.notesFileName) {
-      return `/api/drive/notes/download-by-name?filename=${encodeURIComponent(sermon.notesFileName)}`;
+    const raw = sermon.notesDownloadUrl || sermon.notesUrl || '';
+    const driveMatch = raw.match(/(?:id=|\/d\/|file\/d\/)([a-zA-Z0-9_-]{25,})/);
+    if (driveMatch && driveMatch[1]) {
+      return `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
     }
-    return sermon.notesDownloadUrl || sermon.notesUrl || '';
+    return raw;
   };
 
   // Handle Play/Pause

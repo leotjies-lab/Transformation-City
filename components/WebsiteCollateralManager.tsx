@@ -331,7 +331,7 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
       // It's a notes file!
       setNotesDriveFileId(file.id);
       setNotesFileName(file.name);
-      setNotesUrl(`/api/drive/notes/view/${file.id}?filename=${encodeURIComponent(file.name)}`);
+      setNotesUrl(`https://drive.google.com/file/d/${file.id}/view?usp=sharing`);
       setNotesFileType(file.name.toLowerCase().endsWith('.docx') ? 'docx' : file.name.toLowerCase().endsWith('.doc') ? 'doc' : file.name.toLowerCase().endsWith('.txt') ? 'txt' : 'pdf');
 
       // Check if there's a companion audio file in Drive
@@ -340,8 +340,8 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
       if (companionAudio) {
         setDriveFileId(companionAudio.id);
         setDriveFileName(companionAudio.name);
-        setAudioUrl(`/api/drive/stream/${companionAudio.id}`);
-        setDownloadUrl(`/api/drive/download/${companionAudio.id}?filename=${encodeURIComponent(companionAudio.name)}`);
+        setAudioUrl(`https://docs.google.com/uc?export=open&id=${companionAudio.id}`);
+        setDownloadUrl(`https://drive.google.com/uc?export=download&id=${companionAudio.id}`);
       } else {
         setDriveFileId('');
         setDriveFileName('');
@@ -365,8 +365,8 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
       setDriveFileName(file.name);
 
       // Direct Google Drive playback/download links
-      const streamProxyUrl = `/api/drive/stream/${file.id}`;
-      const directDlUrl = `/api/drive/download/${file.id}?filename=${encodeURIComponent(file.name)}`;
+      const streamProxyUrl = `https://docs.google.com/uc?export=open&id=${file.id}`;
+      const directDlUrl = `https://drive.google.com/uc?export=download&id=${file.id}`;
       setAudioUrl(streamProxyUrl);
       setDownloadUrl(directDlUrl);
 
@@ -375,7 +375,7 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
       if (companionNotes) {
         setNotesDriveFileId(companionNotes.id);
         setNotesFileName(companionNotes.name);
-        setNotesUrl(`/api/drive/notes/view/${companionNotes.id}?filename=${encodeURIComponent(companionNotes.name)}`);
+        setNotesUrl(`https://drive.google.com/file/d/${companionNotes.id}/view?usp=sharing`);
         setNotesFileType(companionNotes.name.toLowerCase().endsWith('.docx') ? 'docx' : 'pdf');
       } else {
         setNotesDriveFileId('');
@@ -465,8 +465,8 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
         audioLength: audioLength.trim() || '45:00',
         description: description.trim() || '',
         scripture: scripture.trim() || '',
-        audioUrl: audioUrl.trim() || (driveFileId ? `/api/drive/stream/${driveFileId}` : ''),
-        downloadUrl: downloadUrl.trim() || (driveFileId ? `/api/drive/download/${driveFileId}?filename=${encodeURIComponent(driveFileName || 'sermon.mp3')}` : ''),
+        audioUrl: audioUrl.trim() || (driveFileId ? `https://docs.google.com/uc?export=open&id=${driveFileId}` : ''),
+        downloadUrl: downloadUrl.trim() || (driveFileId ? `https://drive.google.com/uc?export=download&id=${driveFileId}` : ''),
         driveFileId: driveFileId.trim(),
         driveFileName: driveFileName.trim(),
         driveWebViewLink: GOOGLE_DRIVE_FOLDER_URL,
@@ -475,8 +475,8 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
         // Sermon notes
         notesDriveFileId: notesDriveFileId.trim(),
         notesFileName: notesFileName.trim(),
-        notesUrl: notesUrl.trim() || (notesDriveFileId ? `/api/drive/notes/view/${notesDriveFileId}?filename=${encodeURIComponent(notesFileName || 'sermon-notes.pdf')}` : ''),
-        notesDownloadUrl: notesDriveFileId ? `/api/drive/notes/download/${notesDriveFileId}?filename=${encodeURIComponent(notesFileName || 'sermon-notes.pdf')}` : notesUrl.trim(),
+        notesUrl: notesUrl.trim() || (notesDriveFileId ? `https://drive.google.com/file/d/${notesDriveFileId}/view?usp=sharing` : ''),
+        notesDownloadUrl: notesDriveFileId ? `https://drive.google.com/uc?export=download&id=${notesDriveFileId}` : notesUrl.trim(),
         notesFileType: notesFileType || (notesFileName.toLowerCase().endsWith('.docx') ? 'docx' : 'pdf'),
         isPublished,
         updatedAt: new Date().toISOString(),
