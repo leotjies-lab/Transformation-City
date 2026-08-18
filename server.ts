@@ -80,7 +80,11 @@ async function handleTestSmtp(req: express.Request, res: express.Response) {
   const creds = getSmtpCredentials();
   const diagnosticLogs: string[] = [];
 
-  const recipient = testRecipient || "admin@transformationcitychurch.org";
+  const recipientList = ["admin@transformationcitychurch.org", "leonandalouw@outlook.com"];
+  if (testRecipient && !recipientList.includes(testRecipient)) {
+    recipientList.push(testRecipient);
+  }
+  const recipient = recipientList.join(", ");
 
   try {
     diagnosticLogs.push(`Testing Hostinger SMTP server at ${creds.host}...`);
