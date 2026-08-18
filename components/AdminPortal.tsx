@@ -118,7 +118,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        testRecipient: 'admin@transformationcitychurch.org, leonandalouw@outlook.com',
+        testRecipient: 'leonandalouw@outlook.com',
         sendActualEmail: sendTestEmail,
       }),
     });

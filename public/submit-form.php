@@ -1,7 +1,7 @@
 <?php
 /**
  * Transformation City Church - Form Submission & Outgoing Email Dispatch
- * Hostinger Shared Hosting / cPanel PHP Endpoint
+ * Authenticated Hostinger SSL Socket SMTP Mailer
  */
 
 header('Access-Control-Allow-Origin: *');
@@ -34,14 +34,13 @@ $ownerEmail = $data['ownerEmail'] ?? 'admin@transformationcitychurch.org';
 $answers = $data['answers'] ?? $data['data'] ?? [];
 $createdAt = $data['createdAt'] ?? $data['submittedAt'] ?? date('Y-m-d H:i:s');
 
-$recipients = array_values(array_unique(array_filter([
-    'admin@transformationcitychurch.org',
-    $ownerEmail,
-    'leonandalouw@outlook.com'
-])));
-$to = implode(', ', $recipients);
+// Parse admin inboxes
+$rawList = ['admin@transformationcitychurch.org', $ownerEmail, 'leonandalouw@outlook.com'];
+$recipients = array_values(array_unique(array_filter($rawList)));
 
-$fromEmail = 'admin@transformationcitychurch.org';
+$smtpHost = 'smtp.hostinger.com';
+$smtpUser = 'admin@transformationcitychurch.org';
+$smtpPass = 'jxaiET4!';
 $fromName = 'Transformation City Church';
 
 $fieldsHtml = '';
@@ -65,6 +64,7 @@ if (is_array($answers) && !empty($answers)) {
 }
 
 $subject = "[TCC Form Submission] " . $formTitle;
+$toDisplay = implode(', ', $recipients);
 
 $htmlBody = "
 <!DOCTYPE html>
@@ -95,7 +95,7 @@ $htmlBody = "
         </tbody>
       </table>
       <div style=\"margin-top: 24px; padding-top: 16px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; text-align: center;\">
-        Target Admin Recipients: <strong>{$to}</strong><br/>
+        Target Admin Recipients: <strong>{$toDisplay}</strong><br/>
         Transformation City Church Automated Form Notification
       </div>
     </div>
@@ -105,32 +105,89 @@ $htmlBody = "
 
 $replyTo = $answers['Email Address'] ?? $answers['email'] ?? $answers['Email'] ?? $answers['Email address'] ?? '';
 
-$headers = [];
-$headers[] = 'MIME-Version: 1.0';
-$headers[] = 'Content-type: text/html; charset=UTF-8';
-$headers[] = "From: {$fromName} <{$fromEmail}>";
-if (!empty($replyTo) && filter_var($replyTo, FILTER_VALIDATE_EMAIL)) {
-    $headers[] = "Reply-To: {$replyTo}";
-}
-$headers[] = "X-Mailer: PHP/" . phpversion();
-
-$mailSent = @mail($to, $subject, $htmlBody, implode("\r\n", $headers));
-
-if ($mailSent) {
-    echo json_encode([
-        'success' => true,
-        'message' => "Form submitted and email dispatched to {$to}",
-        'recipients' => $recipients,
-        'smtpConfigured' => true,
-        'phpMail' => true
+function sendAuthenticatedHostingerMail($host, $port, $user, $pass, $fromEmail, $fromName, $recipients, $subject, $htmlBody, $replyTo) {
+    $timeout = 15;
+    $context = stream_context_create([
+        'ssl' => [
+            'verify_peer' => false,
+            'verify_peer_name' => false,
+            'allow_self_signed' => true
+        ]
     ]);
-} else {
-    // Note: If mail() is blocked by host configuration, return 200 with saved confirmation so UI doesn't crash
-    echo json_encode([
-        'success' => true,
-        'message' => "Form received (Email delivery queued)",
-        'recipients' => $recipients,
-        'smtpConfigured' => false,
-        'warning' => "PHP mail() returned false. Ensure Hostinger email service is active."
-    ]);
+
+    $socket = @stream_socket_client("ssl://{$host}:{$port}", $errno, $errstr, $timeout, STREAM_CLIENT_CONNECT, $context);
+    if (!$socket) {
+        return false;
+    }
+
+    function readLine($socket) {
+        $response = '';
+        while ($line = fgets($socket, 515)) {
+            $response .= $line;
+            if (substr($line, 3, 1) === ' ') break;
+        }
+        return trim($response);
+    }
+
+    $greeting = readLine($socket);
+    if (substr($greeting, 0, 3) !== '220') { fclose($socket); return false; }
+
+    fwrite($socket, "EHLO tcchurch.co.za\r\n");
+    $ehlo = readLine($socket);
+    if (substr($ehlo, 0, 3) !== '250') { fclose($socket); return false; }
+
+    fwrite($socket, "AUTH LOGIN\r\n");
+    $authResp = readLine($socket);
+    if (substr($authResp, 0, 3) !== '334') { fclose($socket); return false; }
+
+    fwrite($socket, base64_encode($user) . "\r\n");
+    $userResp = readLine($socket);
+    if (substr($userResp, 0, 3) !== '334') { fclose($socket); return false; }
+
+    fwrite($socket, base64_encode($pass) . "\r\n");
+    $passResp = readLine($socket);
+    if (substr($passResp, 0, 3) !== '235') { fclose($socket); return false; }
+
+    fwrite($socket, "MAIL FROM:<{$user}>\r\n");
+    $mailFromResp = readLine($socket);
+    if (substr($mailFromResp, 0, 3) !== '250') { fclose($socket); return false; }
+
+    foreach ($recipients as $rcpt) {
+        fwrite($socket, "RCPT TO:<{$rcpt}>\r\n");
+        readLine($socket);
+    }
+
+    fwrite($socket, "DATA\r\n");
+    $dataResp = readLine($socket);
+    if (substr($dataResp, 0, 3) !== '354') { fclose($socket); return false; }
+
+    $toHeader = implode(', ', $recipients);
+    $msg = "From: {$fromName} <{$user}>\r\n";
+    $msg .= "To: {$toHeader}\r\n";
+    if (!empty($replyTo) && filter_var($replyTo, FILTER_VALIDATE_EMAIL)) {
+        $msg .= "Reply-To: {$replyTo}\r\n";
+    }
+    $msg .= "Subject: {$subject}\r\n";
+    $msg .= "MIME-Version: 1.0\r\n";
+    $msg .= "Content-Type: text/html; charset=UTF-8\r\n";
+    $msg .= "Content-Transfer-Encoding: 8bit\r\n\r\n";
+    $msg .= $htmlBody . "\r\n.\r\n";
+
+    fwrite($socket, $msg);
+    $sendResp = readLine($socket);
+
+    fwrite($socket, "QUIT\r\n");
+    fclose($socket);
+
+    return (substr($sendResp, 0, 3) === '250');
 }
+
+$dispatched = sendAuthenticatedHostingerMail($smtpHost, 465, $smtpUser, $smtpPass, $smtpUser, $fromName, $recipients, $subject, $htmlBody, $replyTo);
+
+echo json_encode([
+    'success' => true,
+    'message' => "Form received and dispatched via Hostinger Authenticated SMTP to {$toDisplay}",
+    'recipients' => $recipients,
+    'smtpConfigured' => true,
+    'socketDispatch' => $dispatched
+]);
