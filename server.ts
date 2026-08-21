@@ -275,36 +275,57 @@ app.get("/api/drive/files", async (req, res) => {
 // Google Drive Stream Proxy
 app.get("/api/drive/stream/:fileId", async (req, res) => {
   const { fileId } = req.params;
-  try {
-    const driveUrl = `https://docs.google.com/uc?export=open&id=${fileId}`;
-    const response = await fetch(driveUrl, {
-      headers: req.headers.range ? { Range: req.headers.range } : undefined,
-    });
+  if (!fileId) return res.status(400).json({ error: "Missing fileId" });
 
-    if (!response.ok && response.status !== 206) {
-      return res.redirect(`https://drive.google.com/uc?export=download&id=${fileId}`);
+  const candidateUrls = [
+    `https://drive.usercontent.google.com/download?id=${fileId}&export=download&authuser=0`,
+    `https://docs.google.com/uc?export=download&id=${fileId}&confirm=t`,
+    `https://drive.google.com/uc?export=download&id=${fileId}&confirm=t`,
+    `https://docs.google.com/uc?export=open&id=${fileId}`,
+  ];
+
+  const rangeHeader = req.headers.range;
+
+  for (const targetUrl of candidateUrls) {
+    try {
+      const response = await fetch(targetUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          ...(rangeHeader ? { Range: rangeHeader } : {}),
+        },
+        redirect: "follow",
+      });
+
+      const contentType = response.headers.get("content-type") || "";
+
+      // If Google returned HTML virus/error page instead of media stream, skip to next candidate URL
+      if (contentType.includes("text/html") && response.status !== 206) {
+        continue;
+      }
+
+      if (response.ok || response.status === 206) {
+        res.status(response.status);
+        res.setHeader("Content-Type", contentType.startsWith("audio/") ? contentType : "audio/mpeg");
+        res.setHeader("Accept-Ranges", "bytes");
+        res.setHeader("Access-Control-Allow-Origin", "*");
+
+        const contentLength = response.headers.get("content-length");
+        const contentRange = response.headers.get("content-range");
+        if (contentLength) res.setHeader("Content-Length", contentLength);
+        if (contentRange) res.setHeader("Content-Range", contentRange);
+
+        if (response.body) {
+          Readable.fromWeb(response.body as any).pipe(res);
+          return;
+        }
+      }
+    } catch (fetchErr) {
+      console.warn(`[Stream Proxy] Attempt with ${targetUrl} failed:`, fetchErr);
     }
-
-    const contentType = response.headers.get("content-type") || "audio/mpeg";
-    const contentLength = response.headers.get("content-length");
-    const contentRange = response.headers.get("content-range");
-    const acceptRanges = response.headers.get("accept-ranges") || "bytes";
-
-    res.status(response.status);
-    res.setHeader("Content-Type", contentType);
-    res.setHeader("Accept-Ranges", acceptRanges);
-    if (contentLength) res.setHeader("Content-Length", contentLength);
-    if (contentRange) res.setHeader("Content-Range", contentRange);
-
-    if (response.body) {
-      Readable.fromWeb(response.body as any).pipe(res);
-    } else {
-      res.end();
-    }
-  } catch (err: any) {
-    console.error("[Stream API Error]:", err);
-    res.redirect(`https://drive.google.com/uc?export=download&id=${fileId}`);
   }
+
+  // Fallback direct redirect if proxy stream couldn't resolve
+  res.redirect(`https://drive.google.com/uc?export=download&id=${fileId}`);
 });
 
 // Google Drive Download Proxy
