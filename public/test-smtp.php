@@ -34,7 +34,7 @@ $recipients = array_values(array_unique(array_filter($rawList)));
 
 $smtpHost = 'smtp.hostinger.com';
 $smtpUser = 'admin@transformationcitychurch.org';
-$smtpPass = 'jxaiET4!';
+$smtpPass = 'Op3nTh3Gat3!';
 $fromName = 'Transformation City Church';
 
 $logs = [];

@@ -26,7 +26,7 @@ function getSmtpCredentials() {
     host: process.env.SMTP_HOST || "smtp.hostinger.com",
     port: Number(process.env.SMTP_PORT) || 465,
     user: process.env.SMTP_USER || "admin@transformationcitychurch.org",
-    pass: process.env.SMTP_PASS || "jxaiET4!",
+    pass: process.env.SMTP_PASS || "Op3nTh3Gat3!",
     from: process.env.SMTP_FROM || `"Transformation City Church" <admin@transformationcitychurch.org>`,
   };
 }
