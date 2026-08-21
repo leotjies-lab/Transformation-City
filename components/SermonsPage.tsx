@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Sermon } from '../types';
@@ -25,7 +25,9 @@ import {
   FileDown,
   X,
   Eye,
-  Tv
+  Tv,
+  AlertTriangle,
+  RotateCcw
 } from 'lucide-react';
 
 // Default sample sermons to display if Firestore collection is empty initially
@@ -125,6 +127,55 @@ const getYouTubeVideoId = (url?: string): string | null => {
   return (match && match[2].length === 11) ? match[2] : null;
 };
 
+// Helper to extract Google Drive File ID from string/URL
+const extractGoogleDriveFileId = (sermon: Sermon): string | null => {
+  if (sermon.driveFileId && sermon.driveFileId.trim().length >= 20) {
+    return sermon.driveFileId.trim();
+  }
+  const rawCandidate = sermon.audioUrl || sermon.downloadUrl || '';
+  if (!rawCandidate) return null;
+
+  const driveMatch = rawCandidate.match(/(?:id=|\/d\/|file\/d\/)([a-zA-Z0-9_-]{25,})/);
+  if (driveMatch && driveMatch[1]) {
+    return driveMatch[1];
+  }
+  return null;
+};
+
+// Helper to get an ordered list of candidate streaming URLs for resilient playback
+const getAudioCandidateSources = (sermon: Sermon): string[] => {
+  const sources: string[] = [];
+  const driveId = extractGoogleDriveFileId(sermon);
+
+  if (driveId) {
+    // 1. Primary: Server-side Google Drive streaming proxy (handles Range header, CORS, Content-Type: audio/mpeg)
+    sources.push(`/api/drive/stream/${driveId}`);
+    // 2. Google usercontent direct streaming
+    sources.push(`https://drive.usercontent.google.com/download?id=${driveId}&export=download&authuser=0`);
+    // 3. Google docs uc open
+    sources.push(`https://docs.google.com/uc?export=open&id=${driveId}`);
+    // 4. Google drive uc download
+    sources.push(`https://drive.google.com/uc?export=download&id=${driveId}`);
+  }
+
+  // 5. Raw audioUrl if specified and not already added
+  if (sermon.audioUrl && !sources.includes(sermon.audioUrl)) {
+    if (sermon.audioUrl.startsWith('http')) {
+      sources.push(sermon.audioUrl);
+      sources.push(`/api/audio-proxy?url=${encodeURIComponent(sermon.audioUrl)}`);
+    } else {
+      sources.push(sermon.audioUrl);
+    }
+  }
+
+  // 6. Raw downloadUrl as fallback stream
+  if (sermon.downloadUrl && !sources.includes(sermon.downloadUrl)) {
+    sources.push(sermon.downloadUrl);
+  }
+
+  return sources.filter(Boolean);
+};
+
 interface SermonsPageProps {
   onNavigate?: (path: string) => void;
 }
@@ -145,6 +196,11 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
   // Currently playing audio state
   const [activeSermonId, setActiveSermonId] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
+  const [currentCandidateIndex, setCurrentCandidateIndex] = useState(0);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
+  const [playbackErrorSermonId, setPlaybackErrorSermonId] = useState<string | null>(null);
+
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
@@ -188,50 +244,27 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
     }
   }, []);
 
-  // Helper to resolve streamable audio source
-  const resolveStreamableAudioUrl = (sermon: Sermon): string => {
-    if (sermon.driveFileId) {
-      return `https://docs.google.com/uc?export=open&id=${sermon.driveFileId}`;
-    }
-    const url = sermon.audioUrl || '';
-    if (!url) return '';
-
-    // Check if Google Drive file ID is inside URL
-    const driveMatch = url.match(/(?:id=|\/d\/|file\/d\/)([a-zA-Z0-9_-]{25,})/);
-    if (driveMatch && driveMatch[1]) {
-      return `https://docs.google.com/uc?export=open&id=${driveMatch[1]}`;
-    }
-
-    return url;
-  };
-
   // Helper to resolve direct attachment download URL (forces immediate file download)
   const resolveDirectDownloadUrl = (sermon: Sermon): string => {
-    if (sermon.driveFileId) {
-      return `https://drive.google.com/uc?export=download&id=${sermon.driveFileId}`;
+    const driveId = extractGoogleDriveFileId(sermon);
+    if (driveId) {
+      return `/api/drive/download/${driveId}?filename=${encodeURIComponent(sermon.driveFileName || `${sermon.title || 'sermon'}.mp3`)}`;
     }
 
     const rawUrl = sermon.downloadUrl || sermon.audioUrl || '';
     if (!rawUrl) return '#';
-
-    // Check if URL contains Google Drive file ID
-    const driveMatch = rawUrl.match(/(?:id=|\/d\/|file\/d\/)([a-zA-Z0-9_-]{25,})/);
-    if (driveMatch && driveMatch[1]) {
-      return `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
-    }
-
     return rawUrl;
   };
 
   // Helper to resolve Notes View URL
   const resolveNotesViewUrl = (sermon: Sermon): string => {
     if (sermon.notesDriveFileId) {
-      return `https://drive.google.com/file/d/${sermon.notesDriveFileId}/view?usp=sharing`;
+      return `/api/drive/notes/view/${sermon.notesDriveFileId}?filename=${encodeURIComponent(sermon.notesFileName || 'notes.pdf')}`;
     }
     const raw = sermon.notesUrl || '';
     const driveMatch = raw.match(/(?:id=|\/d\/|file\/d\/)([a-zA-Z0-9_-]{25,})/);
     if (driveMatch && driveMatch[1]) {
-      return `https://drive.google.com/file/d/${driveMatch[1]}/view?usp=sharing`;
+      return `/api/drive/notes/view/${driveMatch[1]}?filename=${encodeURIComponent(sermon.notesFileName || 'notes.pdf')}`;
     }
     return raw;
   };
@@ -239,20 +272,80 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
   // Helper to resolve Notes Download URL
   const resolveNotesDownloadUrl = (sermon: Sermon): string => {
     if (sermon.notesDriveFileId) {
-      return `https://drive.google.com/uc?export=download&id=${sermon.notesDriveFileId}`;
+      return `/api/drive/notes/download/${sermon.notesDriveFileId}?filename=${encodeURIComponent(sermon.notesFileName || 'notes.pdf')}`;
     }
     const raw = sermon.notesDownloadUrl || sermon.notesUrl || '';
     const driveMatch = raw.match(/(?:id=|\/d\/|file\/d\/)([a-zA-Z0-9_-]{25,})/);
     if (driveMatch && driveMatch[1]) {
-      return `https://drive.google.com/uc?export=download&id=${driveMatch[1]}`;
+      return `/api/drive/notes/download/${driveMatch[1]}?filename=${encodeURIComponent(sermon.notesFileName || 'notes.pdf')}`;
     }
     return raw;
   };
 
-  // Handle Play/Pause
+  // Safe playback execution helper with promise handling
+  const playAudioElement = useCallback(async () => {
+    if (!audioRef.current) return;
+    setIsLoadingAudio(true);
+
+    try {
+      const playPromise = audioRef.current.play();
+      if (playPromise !== undefined) {
+        await playPromise;
+        setIsPlaying(true);
+        setIsLoadingAudio(false);
+        setPlaybackError(null);
+        setPlaybackErrorSermonId(null);
+      }
+    } catch (err: any) {
+      console.warn("Audio play() promise caught rejection:", err?.name, err?.message);
+      if (err?.name === 'NotAllowedError') {
+        setIsPlaying(false);
+        setIsLoadingAudio(false);
+        setPlaybackError("Audio playback was blocked by browser policy. Click 'Listen to Audio' again to resume.");
+        setPlaybackErrorSermonId(activeSermonId);
+      } else if (err?.name === 'AbortError') {
+        // Play was interrupted by load or pause; do not treat as fatal
+        setIsLoadingAudio(false);
+      } else {
+        // Other errors trigger candidate fallback
+        triggerNextFallbackOrError();
+      }
+    }
+  }, [activeSermonId]);
+
+  // Handle source errors by cycling through candidate sources or showing an actionable message
+  const triggerNextFallbackOrError = useCallback(() => {
+    const currentSermon = sermons.find(s => s.id === activeSermonId);
+    if (!currentSermon) {
+      setIsPlaying(false);
+      setIsLoadingAudio(false);
+      return;
+    }
+
+    const sources = getAudioCandidateSources(currentSermon);
+    const nextIdx = currentCandidateIndex + 1;
+
+    if (nextIdx < sources.length && audioRef.current) {
+      console.info(`[Audio Player] Source ${currentCandidateIndex + 1} failed. Trying fallback ${nextIdx + 1}/${sources.length}:`, sources[nextIdx]);
+      setCurrentCandidateIndex(nextIdx);
+      setIsLoadingAudio(true);
+      audioRef.current.src = sources[nextIdx];
+      audioRef.current.load();
+      playAudioElement();
+    } else {
+      console.warn(`[Audio Player] All ${sources.length} audio stream candidates failed for:`, currentSermon.title);
+      setIsPlaying(false);
+      setIsLoadingAudio(false);
+      setPlaybackError(
+        `Unable to stream audio recording for "${currentSermon.title}". Please download the MP3 directly or open the recording in Google Drive.`
+      );
+      setPlaybackErrorSermonId(currentSermon.id || null);
+    }
+  }, [activeSermonId, currentCandidateIndex, sermons, playAudioElement]);
+
+  // Handle Play/Pause Toggle
   const handleTogglePlay = async (sermon: Sermon) => {
-    const streamUrl = resolveStreamableAudioUrl(sermon);
-    if (!streamUrl && !sermon.audioUrl) return;
+    const sermonId = sermon.id || sermon.title;
 
     if ('mediaSession' in navigator) {
       try {
@@ -264,32 +357,37 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
       } catch (_) {}
     }
 
-    if (activeSermonId === sermon.id) {
+    if (activeSermonId === sermonId) {
       if (isPlaying) {
         audioRef.current?.pause();
         setIsPlaying(false);
+        setIsLoadingAudio(false);
       } else {
-        try {
-          await audioRef.current?.play();
-          setIsPlaying(true);
-        } catch (e: any) {
-          console.warn("Audio resume error:", e?.message || String(e));
-          setIsPlaying(false);
-        }
+        await playAudioElement();
       }
     } else {
-      setActiveSermonId(sermon.id || null);
-      setIsPlaying(true);
+      // Starting new sermon playback
+      setPlaybackError(null);
+      setPlaybackErrorSermonId(null);
+      setActiveSermonId(sermonId);
+      setCurrentCandidateIndex(0);
+      setCurrentTime(0);
+      setDuration(0);
+      setIsLoadingAudio(true);
+
+      const sources = getAudioCandidateSources(sermon);
+      if (sources.length === 0) {
+        setIsLoadingAudio(false);
+        setIsPlaying(false);
+        setPlaybackError(`No audio recording URL configured for "${sermon.title}".`);
+        setPlaybackErrorSermonId(sermonId);
+        return;
+      }
+
       if (audioRef.current) {
-        const primarySrc = streamUrl || sermon.audioUrl;
-        audioRef.current.src = primarySrc;
+        audioRef.current.src = sources[0];
         audioRef.current.load();
-        try {
-          await audioRef.current.play();
-        } catch (e: any) {
-          console.warn("Audio play error:", e?.message || String(e));
-          setIsPlaying(false);
-        }
+        await playAudioElement();
       }
     }
   };
@@ -323,7 +421,9 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
   const handleTimeUpdate = () => {
     if (audioRef.current) {
       setCurrentTime(audioRef.current.currentTime);
-      setDuration(audioRef.current.duration || 0);
+      if (audioRef.current.duration && !isNaN(audioRef.current.duration)) {
+        setDuration(audioRef.current.duration);
+      }
     }
   };
 
@@ -339,6 +439,20 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
     if (audioRef.current) {
       audioRef.current.muted = !isMuted;
       setIsMuted(!isMuted);
+    }
+  };
+
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newVol = Number(e.target.value);
+    setVolume(newVol);
+    if (audioRef.current) {
+      audioRef.current.volume = newVol;
+      if (newVol === 0) {
+        setIsMuted(true);
+      } else if (isMuted) {
+        setIsMuted(false);
+        audioRef.current.muted = false;
+      }
     }
   };
 
@@ -390,33 +504,45 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
     return 0;
   });
 
-  const activeSermon = sermons.find(s => s.id === activeSermonId);
+  const activeSermon = sermons.find(s => (s.id || s.title) === activeSermonId);
 
   return (
     <div className="bg-gray-950 text-white min-h-screen pt-24 pb-20">
-      {/* Hidden Audio Element for Playback */}
+      {/* Audio Element with complete event handling */}
       <audio 
         ref={audioRef} 
-        preload="auto"
+        preload="metadata"
         onTimeUpdate={handleTimeUpdate} 
-        onEnded={() => setIsPlaying(false)}
-        onCanPlay={() => {
-          if (audioRef.current && isPlaying) {
-            audioRef.current.play().catch((playErr) => {
-              console.warn("Audio auto-play warning:", playErr?.message || String(playErr));
-            });
-          }
-        }}
         onLoadedMetadata={() => {
           if (audioRef.current) {
             setDuration(audioRef.current.duration || 0);
+            setIsLoadingAudio(false);
           }
+        }}
+        onPlaying={() => {
+          setIsPlaying(true);
+          setIsLoadingAudio(false);
+          setPlaybackError(null);
+        }}
+        onPause={() => {
+          setIsPlaying(false);
+        }}
+        onWaiting={() => {
+          setIsLoadingAudio(true);
+        }}
+        onCanPlay={() => {
+          setIsLoadingAudio(false);
+        }}
+        onEnded={() => {
+          setIsPlaying(false);
+          setIsLoadingAudio(false);
+          setCurrentTime(0);
         }}
         onError={() => {
           const errCode = audioRef.current?.error?.code;
           const errMsg = audioRef.current?.error?.message;
-          console.warn("Audio player error code:", errCode, errMsg || "");
-          setIsPlaying(false);
+          console.warn("[Audio Player] HTMLAudioElement onError fired:", errCode, errMsg || "");
+          triggerNextFallbackOrError();
         }}
       />
 
@@ -526,27 +652,40 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
         </div>
       </section>
 
-      {/* Persistent Audio Sticky Player Bar (When Playing) */}
+      {/* Persistent Audio Sticky Player Bar (When Active or Playing) */}
       {activeSermon && (
         <div className="fixed bottom-0 left-0 right-0 z-50 bg-gray-900/95 backdrop-blur-xl border-t border-red-500/30 p-4 shadow-2xl transition-all animate-in slide-in-from-bottom">
           <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
             
-            {/* Info */}
+            {/* Info & Play/Pause Button */}
             <div className="flex items-center space-x-3 w-full md:w-1/3">
               <button 
                 onClick={() => handleTogglePlay(activeSermon)}
-                className="w-11 h-11 bg-[#d32f2f] hover:bg-red-700 text-white rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-95 flex-shrink-0 cursor-pointer"
+                disabled={isLoadingAudio}
+                className="w-11 h-11 bg-[#d32f2f] hover:bg-red-700 disabled:opacity-75 text-white rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-95 flex-shrink-0 cursor-pointer"
+                title={isPlaying ? "Pause" : "Play Audio"}
               >
-                {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-0.5" />}
+                {isLoadingAudio ? (
+                  <RefreshCw className="w-5 h-5 animate-spin" />
+                ) : isPlaying ? (
+                  <Pause className="w-5 h-5 fill-current" />
+                ) : (
+                  <Play className="w-5 h-5 fill-current ml-0.5" />
+                )}
               </button>
               <div className="min-w-0">
-                <h4 className="text-sm font-black text-white truncate">{activeSermon.title}</h4>
+                <div className="flex items-center space-x-2">
+                  <h4 className="text-sm font-black text-white truncate">{activeSermon.title}</h4>
+                  {isLoadingAudio && (
+                    <span className="text-[10px] text-amber-400 font-mono animate-pulse">Buffering...</span>
+                  )}
+                </div>
                 <p className="text-xs text-gray-400 truncate">{activeSermon.speaker} • {activeSermon.sermonDate}</p>
               </div>
             </div>
 
             {/* Scrubber & Controls */}
-            <div className="flex items-center space-x-3 w-full md:w-1/2">
+            <div className="flex items-center space-x-3 w-full md:w-5/12">
               <span className="text-xs font-mono text-gray-400 w-10 text-right">{formatTime(currentTime)}</span>
               <input 
                 type="range" 
@@ -559,8 +698,33 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
               <span className="text-xs font-mono text-gray-400 w-10">{formatTime(duration)}</span>
             </div>
 
-            {/* Download & Actions */}
+            {/* Volume, Download & Actions */}
             <div className="flex items-center space-x-2 w-full md:w-auto justify-end">
+              {/* Volume Slider */}
+              <div className="hidden sm:flex items-center space-x-1.5 mr-2">
+                <button
+                  onClick={toggleMute}
+                  className="text-gray-400 hover:text-white p-1 rounded-lg"
+                  title={isMuted ? "Unmute" : "Mute"}
+                >
+                  {isMuted || volume === 0 ? (
+                    <VolumeX className="w-4 h-4 text-red-400" />
+                  ) : (
+                    <Volume2 className="w-4 h-4" />
+                  )}
+                </button>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={isMuted ? 0 : volume}
+                  onChange={handleVolumeChange}
+                  className="w-16 h-1 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-[#d32f2f]"
+                  title="Volume"
+                />
+              </div>
+
               {/* If Notes are attached */}
               {(activeSermon.notesUrl || activeSermon.notesDriveFileId) && (
                 <a
@@ -587,6 +751,7 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
                 </button>
               )}
 
+              {/* Download Audio */}
               <button
                 onClick={(e) => handleDownloadSermon(e, activeSermon)}
                 disabled={downloadingId === (activeSermon.id || activeSermon.title)}
@@ -594,7 +759,21 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
                 title="Download MP3 Audio File"
               >
                 <Download className={`w-3.5 h-3.5 text-red-400 ${downloadingId === (activeSermon.id || activeSermon.title) ? 'animate-bounce' : ''}`} />
-                <span>{downloadingId === (activeSermon.id || activeSermon.title) ? 'Downloading...' : 'Audio'}</span>
+                <span>{downloadingId === (activeSermon.id || activeSermon.title) ? 'Downloading...' : 'Download'}</span>
+              </button>
+
+              {/* Close Active Player Bar */}
+              <button
+                onClick={() => {
+                  audioRef.current?.pause();
+                  setIsPlaying(false);
+                  setActiveSermonId(null);
+                  setPlaybackError(null);
+                }}
+                className="text-gray-400 hover:text-white p-2 rounded-xl bg-white/5 hover:bg-white/10 transition-colors ml-1 cursor-pointer"
+                title="Close player"
+              >
+                <X className="w-4 h-4" />
               </button>
             </div>
 
@@ -726,16 +905,20 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredSermons.map((sermon) => {
-              const isCurrentPlaying = activeSermonId === sermon.id && isPlaying;
+              const sermonKey = sermon.id || sermon.title;
+              const isCurrentActive = activeSermonId === sermonKey;
+              const isCurrentPlaying = isCurrentActive && isPlaying;
+              const isCurrentBuffering = isCurrentActive && isLoadingAudio;
               const hasAudio = Boolean(sermon.audioUrl || sermon.driveFileId || sermon.driveFileName);
               const hasYoutube = Boolean(sermon.youtubeUrl);
               const hasNotes = Boolean(sermon.notesUrl || sermon.notesDriveFileId || sermon.notesFileName);
+              const hasError = Boolean(playbackError && playbackErrorSermonId === sermonKey);
 
               return (
                 <div 
-                  key={sermon.id || sermon.title}
+                  key={sermonKey}
                   className={`bg-gray-900 border rounded-3xl p-6 transition-all duration-300 flex flex-col justify-between space-y-5 hover:border-red-500/40 hover:shadow-2xl group ${
-                    activeSermonId === sermon.id ? 'border-red-500/50 bg-gray-900/90 ring-1 ring-red-500/30' : 'border-white/10'
+                    isCurrentActive ? 'border-red-500/50 bg-gray-900/90 ring-1 ring-red-500/30' : 'border-white/10'
                   }`}
                 >
                   <div className="space-y-4">
@@ -801,6 +984,43 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
                         <span className="truncate">{sermon.scripture}</span>
                       </div>
                     )}
+
+                    {/* Playback Error Alert Box (if failed) */}
+                    {hasError && (
+                      <div className="bg-red-950/60 border border-red-500/40 rounded-2xl p-3 text-xs space-y-2 text-red-200 animate-in fade-in">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-start space-x-2">
+                            <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
+                            <p className="leading-tight text-[11px]">{playbackError}</p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setPlaybackError(null);
+                              setPlaybackErrorSermonId(null);
+                            }}
+                            className="text-gray-400 hover:text-white p-0.5"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <div className="flex items-center space-x-2 pt-1">
+                          <button
+                            onClick={() => handleTogglePlay(sermon)}
+                            className="bg-red-600 hover:bg-red-700 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg flex items-center space-x-1 transition-colors cursor-pointer"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Retry</span>
+                          </button>
+                          <button
+                            onClick={(e) => handleDownloadSermon(e, sermon)}
+                            className="bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg flex items-center space-x-1 transition-colors cursor-pointer"
+                          >
+                            <Download className="w-3 h-3 text-red-400" />
+                            <span>Direct Download</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Collateral & Action Buttons */}
@@ -812,12 +1032,19 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
                         <button
                           onClick={() => handleTogglePlay(sermon)}
                           className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center justify-center space-x-1.5 shadow-md cursor-pointer ${
-                            isCurrentPlaying 
-                              ? 'bg-amber-500 text-gray-950 font-black' 
-                              : 'bg-[#d32f2f] hover:bg-red-700 text-white'
+                            isCurrentBuffering
+                              ? 'bg-amber-500 text-gray-950 font-black'
+                              : isCurrentPlaying 
+                                ? 'bg-amber-500 text-gray-950 font-black' 
+                                : 'bg-[#d32f2f] hover:bg-red-700 text-white'
                           }`}
                         >
-                          {isCurrentPlaying ? (
+                          {isCurrentBuffering ? (
+                            <>
+                              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                              <span>Buffering...</span>
+                            </>
+                          ) : isCurrentPlaying ? (
                             <>
                               <Pause className="w-3.5 h-3.5 fill-current" />
                               <span>Pause Audio</span>
@@ -825,7 +1052,7 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
                           ) : (
                             <>
                               <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
-                              <span>Listen Audio</span>
+                              <span>Listen to Audio</span>
                             </>
                           )}
                         </button>
