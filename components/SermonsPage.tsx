@@ -148,19 +148,22 @@ const getAudioCandidateSources = (sermon: Sermon): string[] => {
   const driveId = extractGoogleDriveFileId(sermon);
 
   if (driveId) {
-    // 1. Primary: Server-side Google Drive streaming proxy (handles Range header, CORS, Content-Type: audio/mpeg)
+    // 1. Direct PHP stream proxy for Hostinger shared hosting
+    sources.push(`/drive-proxy.php?action=stream&id=${driveId}`);
+    // 2. Proxied API stream (Express/Node or Apache rewritten)
     sources.push(`/api/drive/stream/${driveId}`);
-    // 2. Google usercontent direct streaming
-    sources.push(`https://drive.usercontent.google.com/download?id=${driveId}&export=download&authuser=0`);
-    // 3. Google docs uc open
+    // 3. Direct Google usercontent stream
+    sources.push(`https://drive.usercontent.google.com/download?id=${driveId}&export=download&authuser=0&confirm=t`);
+    // 4. Google docs uc open
     sources.push(`https://docs.google.com/uc?export=open&id=${driveId}`);
-    // 4. Google drive uc download
-    sources.push(`https://drive.google.com/uc?export=download&id=${driveId}`);
+    // 5. Google drive uc download
+    sources.push(`https://drive.google.com/uc?export=download&id=${driveId}&confirm=t`);
   }
 
-  // 5. Raw audioUrl if specified and not already added
+  // 6. Raw audioUrl if specified and not already added
   if (sermon.audioUrl && !sources.includes(sermon.audioUrl)) {
     if (sermon.audioUrl.startsWith('http')) {
+      sources.push(`/drive-proxy.php?action=proxy&url=${encodeURIComponent(sermon.audioUrl)}`);
       sources.push(sermon.audioUrl);
       sources.push(`/api/audio-proxy?url=${encodeURIComponent(sermon.audioUrl)}`);
     } else {
@@ -168,7 +171,7 @@ const getAudioCandidateSources = (sermon: Sermon): string[] => {
     }
   }
 
-  // 6. Raw downloadUrl as fallback stream
+  // 7. Raw downloadUrl as fallback stream
   if (sermon.downloadUrl && !sources.includes(sermon.downloadUrl)) {
     sources.push(sermon.downloadUrl);
   }
@@ -208,6 +211,16 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const bufferingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Clear watchdog on unmount
+  useEffect(() => {
+    return () => {
+      if (bufferingTimeoutRef.current) {
+        clearTimeout(bufferingTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Fetch published sermons from Firestore
   useEffect(() => {
@@ -248,7 +261,7 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
   const resolveDirectDownloadUrl = (sermon: Sermon): string => {
     const driveId = extractGoogleDriveFileId(sermon);
     if (driveId) {
-      return `/api/drive/download/${driveId}?filename=${encodeURIComponent(sermon.driveFileName || `${sermon.title || 'sermon'}.mp3`)}`;
+      return `/drive-proxy.php?action=download&id=${driveId}&filename=${encodeURIComponent(sermon.driveFileName || `${sermon.title || 'sermon'}.mp3`)}`;
     }
 
     const rawUrl = sermon.downloadUrl || sermon.audioUrl || '';
@@ -259,12 +272,12 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
   // Helper to resolve Notes View URL
   const resolveNotesViewUrl = (sermon: Sermon): string => {
     if (sermon.notesDriveFileId) {
-      return `/api/drive/notes/view/${sermon.notesDriveFileId}?filename=${encodeURIComponent(sermon.notesFileName || 'notes.pdf')}`;
+      return `/drive-proxy.php?action=notes_view&id=${sermon.notesDriveFileId}&filename=${encodeURIComponent(sermon.notesFileName || 'notes.pdf')}`;
     }
     const raw = sermon.notesUrl || '';
     const driveMatch = raw.match(/(?:id=|\/d\/|file\/d\/)([a-zA-Z0-9_-]{25,})/);
     if (driveMatch && driveMatch[1]) {
-      return `/api/drive/notes/view/${driveMatch[1]}?filename=${encodeURIComponent(sermon.notesFileName || 'notes.pdf')}`;
+      return `/drive-proxy.php?action=notes_view&id=${driveMatch[1]}&filename=${encodeURIComponent(sermon.notesFileName || 'notes.pdf')}`;
     }
     return raw;
   };
@@ -272,12 +285,12 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
   // Helper to resolve Notes Download URL
   const resolveNotesDownloadUrl = (sermon: Sermon): string => {
     if (sermon.notesDriveFileId) {
-      return `/api/drive/notes/download/${sermon.notesDriveFileId}?filename=${encodeURIComponent(sermon.notesFileName || 'notes.pdf')}`;
+      return `/drive-proxy.php?action=notes_download&id=${sermon.notesDriveFileId}&filename=${encodeURIComponent(sermon.notesFileName || 'notes.pdf')}`;
     }
     const raw = sermon.notesDownloadUrl || sermon.notesUrl || '';
     const driveMatch = raw.match(/(?:id=|\/d\/|file\/d\/)([a-zA-Z0-9_-]{25,})/);
     if (driveMatch && driveMatch[1]) {
-      return `/api/drive/notes/download/${driveMatch[1]}?filename=${encodeURIComponent(sermon.notesFileName || 'notes.pdf')}`;
+      return `/drive-proxy.php?action=notes_download&id=${driveMatch[1]}&filename=${encodeURIComponent(sermon.notesFileName || 'notes.pdf')}`;
     }
     return raw;
   };
@@ -287,10 +300,20 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
     if (!audioRef.current) return;
     setIsLoadingAudio(true);
 
+    // Set 6-second buffering watchdog
+    if (bufferingTimeoutRef.current) clearTimeout(bufferingTimeoutRef.current);
+    bufferingTimeoutRef.current = setTimeout(() => {
+      if (audioRef.current && (audioRef.current.readyState < 2 || audioRef.current.paused)) {
+        console.warn('[Audio Player] Buffering timeout reached (6s). Advancing to next stream candidate...');
+        triggerNextFallbackOrError();
+      }
+    }, 6000);
+
     try {
       const playPromise = audioRef.current.play();
       if (playPromise !== undefined) {
         await playPromise;
+        if (bufferingTimeoutRef.current) clearTimeout(bufferingTimeoutRef.current);
         setIsPlaying(true);
         setIsLoadingAudio(false);
         setPlaybackError(null);
@@ -298,6 +321,7 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
       }
     } catch (err: any) {
       console.warn("Audio play() promise caught rejection:", err?.name, err?.message);
+      if (bufferingTimeoutRef.current) clearTimeout(bufferingTimeoutRef.current);
       if (err?.name === 'NotAllowedError') {
         setIsPlaying(false);
         setIsLoadingAudio(false);
@@ -315,7 +339,9 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
 
   // Handle source errors by cycling through candidate sources or showing an actionable message
   const triggerNextFallbackOrError = useCallback(() => {
-    const currentSermon = sermons.find(s => s.id === activeSermonId);
+    if (bufferingTimeoutRef.current) clearTimeout(bufferingTimeoutRef.current);
+
+    const currentSermon = sermons.find(s => (s.id || s.title) === activeSermonId);
     if (!currentSermon) {
       setIsPlaying(false);
       setIsLoadingAudio(false);
@@ -339,7 +365,7 @@ const SermonsPage: React.FC<SermonsPageProps> = () => {
       setPlaybackError(
         `Unable to stream audio recording for "${currentSermon.title}". Please download the MP3 directly or open the recording in Google Drive.`
       );
-      setPlaybackErrorSermonId(currentSermon.id || null);
+      setPlaybackErrorSermonId(currentSermon.id || currentSermon.title);
     }
   }, [activeSermonId, currentCandidateIndex, sermons, playAudioElement]);
 

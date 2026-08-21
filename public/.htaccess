@@ -1,8 +1,23 @@
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
+
+  # 1. API Endpoints routed to PHP backend scripts for Hostinger
+  RewriteRule ^api/drive/stream/(.+)$ drive-proxy.php?action=stream&id=$1 [QSA,L]
+  RewriteRule ^api/drive/download/(.+)$ drive-proxy.php?action=download&id=$1 [QSA,L]
+  RewriteRule ^api/drive/notes/view/(.+)$ drive-proxy.php?action=notes_view&id=$1 [QSA,L]
+  RewriteRule ^api/drive/notes/download/(.+)$ drive-proxy.php?action=notes_download&id=$1 [QSA,L]
+  RewriteRule ^api/drive/files/?$ drive-proxy.php?action=files [QSA,L]
+  RewriteRule ^api/audio-proxy/?$ drive-proxy.php?action=proxy [QSA,L]
+  RewriteRule ^api/submit-form/?$ submit-form.php [QSA,L]
+  RewriteRule ^api/test-smtp/?$ test-smtp.php [QSA,L]
+
+  # 2. Prevent rewrites for existing real files and directories
   RewriteRule ^index\.html$ - [L]
-  RewriteCond %{REQUEST_FILENAME} !-f
-  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # 3. SPA Fallback for all other routes
   RewriteRule . /index.html [L]
 </IfModule>
