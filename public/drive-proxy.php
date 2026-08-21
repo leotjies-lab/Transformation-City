@@ -35,6 +35,10 @@ if ($action === 'files') {
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        CURLOPT_HTTPHEADER => [
+            'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language: en-US,en;q=0.9'
+        ],
         CURLOPT_TIMEOUT => 15,
         CURLOPT_SSL_VERIFYPEER => false,
     ]);
@@ -44,34 +48,60 @@ if ($action === 'files') {
     $files = [];
     $seenIds = [];
 
-    if ($html) {
-        if (preg_match_all('/\["([a-zA-Z0-9_-]{25,})",\["([^"]+)"/i', $html, $matches, PREG_SET_ORDER)) {
-            foreach ($matches as $match) {
-                $id = $match[1];
-                $name = $match[2];
-                $name = stripcslashes($name);
-                
-                if (!isset($seenIds[$id])) {
-                    $seenIds[$id] = true;
-                    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
-                    $isAudio = in_array($ext, ['mp3', 'm4a', 'wav', 'aac', 'ogg']);
-                    $isNotes = in_array($ext, ['pdf', 'docx', 'doc', 'txt']);
-                    
-                    $mime = $isAudio ? ($ext === 'mp3' ? 'audio/mpeg' : 'audio/' . $ext) : ($isNotes ? 'application/pdf' : 'application/octet-stream');
+    $addPhpParsedFile = function($id, $rawName) use (&$files, &$seenIds) {
+        if (empty($id) || strlen($id) < 20 || isset($seenIds[$id])) return;
+        $name = trim(stripcslashes($rawName));
+        $name = str_replace(['\x22', '\x5b', '\x5d'], ['"', '[', ']'], $name);
+        if (empty($name) || strlen($name) < 2) return;
 
-                    $files[] = [
-                        'id' => $id,
-                        'name' => $name,
-                        'mimeType' => $mime,
-                        'category' => $isAudio ? 'audio' : ($isNotes ? 'notes' : 'other'),
-                        'isAudio' => $isAudio,
-                        'isNotes' => $isNotes,
-                        'webViewLink' => "https://drive.google.com/file/d/{$id}/view",
-                        'streamUrl' => $isAudio ? "/drive-proxy.php?action=stream&id={$id}" : null,
-                        'downloadUrl' => "/drive-proxy.php?action=download&id={$id}&filename=" . urlencode($name),
-                        'notesViewUrl' => $isNotes ? "/drive-proxy.php?action=notes_view&id={$id}&filename=" . urlencode($name) : null,
-                    ];
+        $seenIds[$id] = true;
+        $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+        $isAudio = in_array($ext, ['mp3', 'm4a', 'wav', 'aac', 'ogg', 'flac', 'opus', 'wma']);
+        $isNotes = in_array($ext, ['pdf', 'docx', 'doc', 'txt', 'rtf', 'odt', 'ppt', 'pptx']);
+
+        $mime = $isAudio ? ($ext === 'mp3' ? 'audio/mpeg' : 'audio/' . $ext) : ($isNotes ? ($ext === 'pdf' ? 'application/pdf' : 'application/msword') : 'application/octet-stream');
+
+        $files[] = [
+            'id' => $id,
+            'name' => $name,
+            'mimeType' => $mime,
+            'category' => $isAudio ? 'audio' : ($isNotes ? 'notes' : 'other'),
+            'isAudio' => $isAudio,
+            'isNotes' => $isNotes,
+            'webViewLink' => "https://drive.google.com/file/d/{$id}/view",
+            'streamUrl' => $isAudio ? "/drive-proxy.php?action=stream&id={$id}" : null,
+            'downloadUrl' => "/drive-proxy.php?action=download&id={$id}&filename=" . urlencode($name),
+            'notesViewUrl' => $isNotes ? "/drive-proxy.php?action=notes_view&id={$id}&filename=" . urlencode($name) : null,
+            'notesDownloadUrl' => $isNotes ? "/drive-proxy.php?action=notes_download&id={$id}&filename=" . urlencode($name) : null,
+        ];
+    };
+
+    if ($html) {
+        // Method 1: Modern AF_initDataCallback chunk scanner
+        $itemBlocks = preg_split('/\[\[(?:null,)?\"([a-zA-Z0-9_-]{25,})\"\]/', $html, -1, PREG_SPLIT_DELIM_CAPTURE);
+        if (is_array($itemBlocks)) {
+            for ($i = 1; $i < count($itemBlocks); $i += 2) {
+                $id = $itemBlocks[$i];
+                $chunk = $itemBlocks[$i + 1] ?? "";
+                if (preg_match('/\[\[\[\"([^\"]+\.(?:mp3|m4a|wav|aac|ogg|wma|pdf|docx?|txt|pptx?|rtf|mp4|mov))\"/i', $chunk, $m) ||
+                    preg_match('/\"([^\"]+\.(?:mp3|m4a|wav|aac|ogg|wma|pdf|docx?|txt|pptx?|rtf|mp4|mov))\"/i', $chunk, $m)) {
+                    $addPhpParsedFile($id, $m[1]);
                 }
+            }
+        }
+
+        // Method 2: Hex encoded / unescaped file links
+        $unescaped = str_replace(['\x22', '\x5b', '\x5d', '\/'], ['"', '[', ']', '/'], $html);
+        if (preg_match_all('/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]{25,})\/[^\"]*?\"([^\"]+\.(?:mp3|m4a|wav|aac|ogg|wma|pdf|docx?|txt|pptx?|rtf|mp4|mov))\"/i', $unescaped, $linkMatches, PREG_SET_ORDER)) {
+            foreach ($linkMatches as $lm) {
+                $addPhpParsedFile($lm[1], $lm[2]);
+            }
+        }
+
+        // Method 3: Legacy Google Drive JSON notation
+        if (preg_match_all('/\[\"([a-zA-Z0-9_-]{25,})\",\[\"([^"]+)\"/i', $html, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $addPhpParsedFile($match[1], $match[2]);
             }
         }
     }

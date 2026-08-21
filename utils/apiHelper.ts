@@ -108,6 +108,34 @@ export async function safeFetchJson<T = any>(
         }
       }
 
+      // If we called /api/drive/files and got HTML, attempt fallback to /drive-proxy.php?action=files
+      if (url.includes('/api/drive/files') && !url.includes('.php')) {
+        try {
+          const urlObj = new URL(url, window.location.origin);
+          const folderId = urlObj.searchParams.get('folderId') || '';
+          const phpUrl = `/drive-proxy.php?action=files${folderId ? `&folderId=${encodeURIComponent(folderId)}` : ''}`;
+          const phpRes = await fetch(phpUrl, {
+            ...options,
+            headers: {
+              Accept: 'application/json',
+              ...(options?.headers || {}),
+            },
+          });
+          const phpContentType = phpRes.headers.get('content-type') || '';
+          if (phpContentType.includes('application/json')) {
+            const phpData = await phpRes.json();
+            return {
+              ok: phpRes.ok,
+              status: phpRes.status,
+              data: phpData,
+              error: phpRes.ok ? null : (phpData?.error || 'PHP Drive endpoint error'),
+            };
+          }
+        } catch {
+          // Ignore and proceed
+        }
+      }
+
       if (res.status === 404 || rawText.includes('<!DOCTYPE') || rawText.includes('<html')) {
         return {
           ok: false,

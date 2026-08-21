@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Sermon, DriveAudioFile } from '../types';
+import { safeFetchJson } from '../utils/apiHelper';
 import { 
   FolderKey, 
   ExternalLink, 
@@ -273,27 +274,23 @@ const WebsiteCollateralManager: React.FC<WebsiteCollateralManagerProps> = ({ adm
     setLoadingDrive(true);
     setDriveError('');
     try {
-      const res = await fetch(`/api/drive/files?folderId=${GOOGLE_DRIVE_FOLDER_ID}`);
+      let res = await safeFetchJson(`/api/drive/files?folderId=${GOOGLE_DRIVE_FOLDER_ID}`);
       
       if (!res.ok) {
-        if (res.status === 404) {
-          throw new Error('API route /api/drive/files returned 404 Not Found. Please ensure the Node.js backend server (dist/server.cjs) is running on your web host and routing /api requests.');
-        } else if (res.status >= 500) {
-          throw new Error(`Server returned HTTP ${res.status}. Check your backend server logs on the host.`);
-        } else {
-          throw new Error(`HTTP ${res.status}: Failed to reach backend API.`);
-        }
+        // Try direct PHP proxy fallback if running on PHP/Hostinger environment
+        res = await safeFetchJson(`/drive-proxy.php?action=files&folderId=${GOOGLE_DRIVE_FOLDER_ID}`);
       }
 
-      const data = await res.json();
-      if (data.success && Array.isArray(data.files)) {
-        setDriveFiles(data.files);
-        setDriveSuccess(data.message || `Loaded ${data.files.length} file(s) from tccmedia123 Google Drive`);
+      if (res.ok && res.data?.success && Array.isArray(res.data.files)) {
+        const files: DriveAudioFile[] = res.data.files;
+        setDriveFiles(files);
+        setDriveSuccess(res.data.message || `Loaded ${files.length} file(s) from Google Drive`);
         if (sermonsList.length > 0) {
-          syncAndAutoHideMissingDriveFiles(data.files, sermonsList);
+          syncAndAutoHideMissingDriveFiles(files, sermonsList);
         }
       } else {
-        setDriveError(data.error || 'Unable to load files from Google Drive folder.');
+        const errMsg = res.error || res.data?.error || 'Unable to load files from Google Drive folder.';
+        setDriveError(errMsg);
       }
     } catch (err: any) {
       console.warn('Drive files fetch error:', err);

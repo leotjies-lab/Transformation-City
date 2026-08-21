@@ -198,13 +198,13 @@ app.post("/api/test-smtp", handleTestSmtp);
 function getFileCategoryAndMime(fileName: string, rawMime?: string | null): { category: 'audio' | 'notes' | 'video' | 'other'; mimeType: string; isAudio: boolean; isNotes: boolean } {
   const ext = (fileName.split('.').pop() || '').toLowerCase();
   
-  if (['mp3', 'm4a', 'wav', 'aac', 'ogg', 'flac', 'opus'].includes(ext) || rawMime?.startsWith('audio/')) {
-    const mime = ext === 'mp3' ? 'audio/mpeg' : ext === 'm4a' ? 'audio/mp4' : ext === 'wav' ? 'audio/wav' : rawMime || 'audio/mpeg';
+  if (['mp3', 'm4a', 'wav', 'aac', 'ogg', 'flac', 'opus', 'wma'].includes(ext) || rawMime?.startsWith('audio/')) {
+    const mime = ext === 'mp3' ? 'audio/mpeg' : ext === 'm4a' ? 'audio/mp4' : ext === 'wav' ? 'audio/wav' : `audio/${ext}`;
     return { category: 'audio', mimeType: mime, isAudio: true, isNotes: false };
   }
   
   if (['pdf', 'docx', 'doc', 'txt', 'rtf', 'odt', 'ppt', 'pptx'].includes(ext) || rawMime?.includes('pdf') || rawMime?.includes('word') || rawMime?.includes('document')) {
-    const mime = ext === 'pdf' ? 'application/pdf' : ext === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : ext === 'doc' ? 'application/msword' : ext === 'txt' ? 'text/plain' : rawMime || 'application/pdf';
+    const mime = ext === 'pdf' ? 'application/pdf' : ext === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : ext === 'doc' ? 'application/msword' : 'text/plain';
     return { category: 'notes', mimeType: mime, isAudio: false, isNotes: true };
   }
 
@@ -226,6 +226,7 @@ app.get("/api/drive/files", async (req, res) => {
       headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
       },
     });
 
@@ -233,28 +234,55 @@ app.get("/api/drive/files", async (req, res) => {
     const files: any[] = [];
     const seenIds = new Set<string>();
 
-    const jsonMatches = html.matchAll(/\["([a-zA-Z0-9_-]{25,})",\["([^"]+)"/g);
-    for (const match of jsonMatches) {
-      const id = match[1];
-      let name = match[2];
-      try { name = decodeURIComponent(JSON.parse(`"${name}"`)); } catch {}
+    const addParsedFile = (id: string, rawName: string) => {
+      if (!id || id.length < 20 || seenIds.has(id)) return;
+      let name = rawName.trim();
+      try {
+        name = decodeURIComponent(JSON.parse(`"${name}"`));
+      } catch {}
+      name = name.replace(/\\x22/g, '"').replace(/\\x5b/g, '[').replace(/\\x5d/g, ']').replace(/\\\//g, '/').trim();
+      if (!name || name.length < 2) return;
 
-      if (id && name && !seenIds.has(id)) {
-        seenIds.add(id);
-        const { category, mimeType, isAudio, isNotes } = getFileCategoryAndMime(name);
-        files.push({
-          id,
-          name,
-          mimeType,
-          category,
-          isAudio,
-          isNotes,
-          webViewLink: `https://drive.google.com/file/d/${id}/view`,
-          streamUrl: isAudio ? `/api/drive/stream/${id}` : undefined,
-          downloadUrl: `/api/drive/download/${id}?filename=${encodeURIComponent(name)}`,
-          notesViewUrl: isNotes ? `/api/drive/notes/view/${id}?filename=${encodeURIComponent(name)}` : undefined,
-        });
+      seenIds.add(id);
+      const { category, mimeType, isAudio, isNotes } = getFileCategoryAndMime(name);
+      files.push({
+        id,
+        name,
+        mimeType,
+        category,
+        isAudio,
+        isNotes,
+        webViewLink: `https://drive.google.com/file/d/${id}/view`,
+        streamUrl: isAudio ? `/api/drive/stream/${id}` : undefined,
+        downloadUrl: `/api/drive/download/${id}?filename=${encodeURIComponent(name)}`,
+        notesViewUrl: isNotes ? `/api/drive/notes/view/${id}?filename=${encodeURIComponent(name)}` : undefined,
+        notesDownloadUrl: isNotes ? `/api/drive/notes/download/${id}?filename=${encodeURIComponent(name)}` : undefined,
+      });
+    };
+
+    // Method 1: Split chunks in modern Google Drive AF_initDataCallback
+    const itemBlocks = html.split(/\[\[(?:null,)?\"([a-zA-Z0-9_-]{25,})\"\]/);
+    for (let i = 1; i < itemBlocks.length; i += 2) {
+      const id = itemBlocks[i];
+      const chunk = itemBlocks[i + 1] || "";
+      const nameMatch = chunk.match(/\[\[\[\"([^\"]+\.(?:mp3|m4a|wav|aac|ogg|wma|pdf|docx?|txt|pptx?|rtf|mp4|mov))\"/i) ||
+                        chunk.match(/\"([^\"]+\.(?:mp3|m4a|wav|aac|ogg|wma|pdf|docx?|txt|pptx?|rtf|mp4|mov))\"/i);
+      if (nameMatch) {
+        addParsedFile(id, nameMatch[1]);
       }
+    }
+
+    // Method 2: Hex encoded and escaped formats from _DRIVE_ivdc / file links
+    const unescapedHtml = html.replace(/\\x22/g, '"').replace(/\\x5b/g, '[').replace(/\\x5d/g, ']').replace(/\\\//g, '/');
+    const linkMatches = unescapedHtml.matchAll(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]{25,})\/[^\"]*?\"([^\"]+\.(?:mp3|m4a|wav|aac|ogg|wma|pdf|docx?|txt|pptx?|rtf|mp4|mov))\"/gi);
+    for (const m of linkMatches) {
+      addParsedFile(m[1], m[2]);
+    }
+
+    // Method 3: Legacy format ["ID",["NAME"
+    const legacyMatches = html.matchAll(/\[\"([a-zA-Z0-9_-]{25,})\",\[\"([^\"]+)\"/g);
+    for (const m of legacyMatches) {
+      addParsedFile(m[1], m[2]);
     }
 
     return res.json({
@@ -346,6 +374,51 @@ app.get("/api/drive/download/:fileId", async (req, res) => {
     }
   } catch (err: any) {
     console.error("[Download API Error]:", err);
+    res.redirect(`https://drive.google.com/uc?export=download&id=${fileId}`);
+  }
+});
+
+// Google Drive Notes View Proxy (PDF / inline viewing)
+app.get("/api/drive/notes/view/:fileId", async (req, res) => {
+  const { fileId } = req.params;
+  const filename = (req.query.filename as string) || "notes.pdf";
+  try {
+    const driveUrl = `https://drive.google.com/uc?export=open&id=${fileId}`;
+    const response = await fetch(driveUrl);
+    const contentType = response.headers.get("content-type") || (filename.toLowerCase().endsWith(".pdf") ? "application/pdf" : "application/octet-stream");
+
+    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(filename)}"`);
+    res.setHeader("Content-Type", contentType);
+
+    if (response.body) {
+      Readable.fromWeb(response.body as any).pipe(res);
+    } else {
+      res.redirect(`https://drive.google.com/file/d/${fileId}/view`);
+    }
+  } catch (err: any) {
+    console.error("[Notes View Error]:", err);
+    res.redirect(`https://drive.google.com/file/d/${fileId}/view`);
+  }
+});
+
+// Google Drive Notes Download Proxy
+app.get("/api/drive/notes/download/:fileId", async (req, res) => {
+  const { fileId } = req.params;
+  const filename = (req.query.filename as string) || "notes.pdf";
+  try {
+    const driveUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+    const response = await fetch(driveUrl);
+
+    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
+    res.setHeader("Content-Type", response.headers.get("content-type") || "application/octet-stream");
+
+    if (response.body) {
+      Readable.fromWeb(response.body as any).pipe(res);
+    } else {
+      res.end();
+    }
+  } catch (err: any) {
+    console.error("[Notes Download Error]:", err);
     res.redirect(`https://drive.google.com/uc?export=download&id=${fileId}`);
   }
 });
