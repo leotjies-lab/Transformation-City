@@ -34,8 +34,11 @@ $ownerEmail = $data['ownerEmail'] ?? 'admin@transformationcitychurch.org';
 $answers = $data['answers'] ?? $data['data'] ?? [];
 $createdAt = $data['createdAt'] ?? $data['submittedAt'] ?? date('Y-m-d H:i:s');
 
-// Parse admin inboxes
+// Parse admin inboxes - ensure both church admin and Leonanda Louw receive notifications
 $rawList = ['admin@transformationcitychurch.org', $ownerEmail, 'leonandalouw@outlook.com'];
+if (isset($data['recipients']) && is_array($data['recipients'])) {
+    $rawList = array_merge($rawList, $data['recipients']);
+}
 $recipients = array_values(array_unique(array_filter($rawList)));
 
 $smtpHost = 'smtp.hostinger.com';
@@ -105,7 +108,31 @@ $htmlBody = "
 
 $replyTo = $answers['Email Address'] ?? $answers['email'] ?? $answers['Email'] ?? $answers['Email address'] ?? '';
 
-function sendAuthenticatedHostingerMail($host, $port, $user, $pass, $fromEmail, $fromName, $recipients, $subject, $htmlBody, $replyTo) {
+// Top-level Socket Mailer Helpers
+function tcc_read_socket_line($socket, &$logs) {
+    $response = '';
+    while ($line = fgets($socket, 515)) {
+        $response .= $line;
+        if (substr($line, 3, 1) === ' ') {
+            break;
+        }
+    }
+    $trimmed = trim($response);
+    return $trimmed;
+}
+
+function tcc_send_socket_command($socket, $cmd, &$logs, $mask = false) {
+    fwrite($socket, $cmd . "\r\n");
+    $resp = tcc_read_socket_line($socket, $logs);
+    if ($mask) {
+        $logs[] = ">> [AUTH CREDENTIALS SENT] -> Response: {$resp}";
+    } else {
+        $logs[] = ">> {$cmd} -> Response: {$resp}";
+    }
+    return $resp;
+}
+
+function tcc_send_hostinger_mail($host, $port, $user, $pass, $fromEmail, $fromName, $recipients, $subject, $htmlBody, $replyTo, &$logs) {
     $timeout = 15;
     $context = stream_context_create([
         'ssl' => [
@@ -117,55 +144,83 @@ function sendAuthenticatedHostingerMail($host, $port, $user, $pass, $fromEmail, 
 
     $socket = @stream_socket_client("ssl://{$host}:{$port}", $errno, $errstr, $timeout, STREAM_CLIENT_CONNECT, $context);
     if (!$socket) {
+        $logs[] = "[ERROR] Could not connect to ssl://{$host}:{$port} - {$errstr} ({$errno})";
         return false;
     }
 
-    function readLine($socket) {
-        $response = '';
-        while ($line = fgets($socket, 515)) {
-            $response .= $line;
-            if (substr($line, 3, 1) === ' ') break;
-        }
-        return trim($response);
+    stream_set_timeout($socket, $timeout);
+
+    $greeting = tcc_read_socket_line($socket, $logs);
+    $logs[] = "Server Greeting: {$greeting}";
+    if (substr($greeting, 0, 3) !== '220') {
+        fclose($socket);
+        return false;
     }
 
-    $greeting = readLine($socket);
-    if (substr($greeting, 0, 3) !== '220') { fclose($socket); return false; }
+    $ehlo = tcc_send_socket_command($socket, "EHLO tcchurch.co.za", $logs);
+    if (substr($ehlo, 0, 3) !== '250') {
+        fclose($socket);
+        return false;
+    }
 
-    fwrite($socket, "EHLO tcchurch.co.za\r\n");
-    $ehlo = readLine($socket);
-    if (substr($ehlo, 0, 3) !== '250') { fclose($socket); return false; }
+    $authResp = tcc_send_socket_command($socket, "AUTH LOGIN", $logs);
+    if (substr($authResp, 0, 3) !== '334') {
+        fclose($socket);
+        return false;
+    }
 
-    fwrite($socket, "AUTH LOGIN\r\n");
-    $authResp = readLine($socket);
-    if (substr($authResp, 0, 3) !== '334') { fclose($socket); return false; }
+    $userResp = tcc_send_socket_command($socket, base64_encode($user), $logs, true);
+    if (substr($userResp, 0, 3) !== '334') {
+        $logs[] = "[ERROR] Username rejected by Hostinger: {$userResp}";
+        fclose($socket);
+        return false;
+    }
 
-    fwrite($socket, base64_encode($user) . "\r\n");
-    $userResp = readLine($socket);
-    if (substr($userResp, 0, 3) !== '334') { fclose($socket); return false; }
+    $passResp = tcc_send_socket_command($socket, base64_encode($pass), $logs, true);
+    if (substr($passResp, 0, 3) !== '235') {
+        $logs[] = "[ERROR] Authentication failed: {$passResp}";
+        fclose($socket);
+        return false;
+    }
 
-    fwrite($socket, base64_encode($pass) . "\r\n");
-    $passResp = readLine($socket);
-    if (substr($passResp, 0, 3) !== '235') { fclose($socket); return false; }
+    $logs[] = "[SUCCESS] Hostinger SMTP Authentication Confirmed";
 
-    fwrite($socket, "MAIL FROM:<{$user}>\r\n");
-    $mailFromResp = readLine($socket);
-    if (substr($mailFromResp, 0, 3) !== '250') { fclose($socket); return false; }
+    $mailFromResp = tcc_send_socket_command($socket, "MAIL FROM:<{$user}>", $logs);
+    if (substr($mailFromResp, 0, 3) !== '250') {
+        fclose($socket);
+        return false;
+    }
 
+    $acceptedCount = 0;
     foreach ($recipients as $rcpt) {
-        fwrite($socket, "RCPT TO:<{$rcpt}>\r\n");
-        readLine($socket);
+        $rcptResp = tcc_send_socket_command($socket, "RCPT TO:<{$rcpt}>", $logs);
+        if (substr($rcptResp, 0, 3) !== '250') {
+            $logs[] = "[WARN] Recipient <{$rcpt}> returned: {$rcptResp}";
+        } else {
+            $logs[] = "[OK] Recipient accepted: {$rcpt}";
+            $acceptedCount++;
+        }
     }
 
-    fwrite($socket, "DATA\r\n");
-    $dataResp = readLine($socket);
-    if (substr($dataResp, 0, 3) !== '354') { fclose($socket); return false; }
+    if ($acceptedCount === 0) {
+        $logs[] = "[ERROR] No recipients were accepted by Hostinger";
+        fclose($socket);
+        return false;
+    }
+
+    $dataResp = tcc_send_socket_command($socket, "DATA", $logs);
+    if (substr($dataResp, 0, 3) !== '354') {
+        fclose($socket);
+        return false;
+    }
 
     $toHeader = implode(', ', $recipients);
     $msg = "From: {$fromName} <{$user}>\r\n";
     $msg .= "To: {$toHeader}\r\n";
     if (!empty($replyTo) && filter_var($replyTo, FILTER_VALIDATE_EMAIL)) {
         $msg .= "Reply-To: {$replyTo}\r\n";
+    } else {
+        $msg .= "Reply-To: {$user}\r\n";
     }
     $msg .= "Subject: {$subject}\r\n";
     $msg .= "MIME-Version: 1.0\r\n";
@@ -174,20 +229,35 @@ function sendAuthenticatedHostingerMail($host, $port, $user, $pass, $fromEmail, 
     $msg .= $htmlBody . "\r\n.\r\n";
 
     fwrite($socket, $msg);
-    $sendResp = readLine($socket);
+    $sendResp = tcc_read_socket_line($socket, $logs);
+    $logs[] = "Data Submission Result: {$sendResp}";
 
-    fwrite($socket, "QUIT\r\n");
+    tcc_send_socket_command($socket, "QUIT", $logs);
     fclose($socket);
 
     return (substr($sendResp, 0, 3) === '250');
 }
 
-$dispatched = sendAuthenticatedHostingerMail($smtpHost, 465, $smtpUser, $smtpPass, $smtpUser, $fromName, $recipients, $subject, $htmlBody, $replyTo);
+$logs = [];
+$dispatched = tcc_send_hostinger_mail($smtpHost, 465, $smtpUser, $smtpPass, $smtpUser, $fromName, $recipients, $subject, $htmlBody, $replyTo, $logs);
 
-echo json_encode([
-    'success' => true,
-    'message' => "Form received and dispatched via Hostinger Authenticated SMTP to {$toDisplay}",
-    'recipients' => $recipients,
-    'smtpConfigured' => true,
-    'socketDispatch' => $dispatched
-]);
+if ($dispatched) {
+    echo json_encode([
+        'success' => true,
+        'message' => "Form notification successfully dispatched via Hostinger SMTP to {$toDisplay}",
+        'recipients' => $recipients,
+        'smtpConfigured' => true,
+        'socketDispatch' => true,
+        'logs' => $logs
+    ]);
+} else {
+    http_response_code(500);
+    echo json_encode([
+        'success' => false,
+        'error' => 'Failed to dispatch email via Hostinger SMTP.',
+        'recipients' => $recipients,
+        'smtpConfigured' => true,
+        'socketDispatch' => false,
+        'logs' => $logs
+    ]);
+}

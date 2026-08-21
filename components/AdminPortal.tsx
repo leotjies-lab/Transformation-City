@@ -210,6 +210,7 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
   const [interestFilter, setInterestFilter] = useState<string>('all');
   const [emailStatusFilter, setEmailStatusFilter] = useState<string>('all');
   const [isResendingAdminEmail, setIsResendingAdminEmail] = useState(false);
+  const [resendingSubmissionId, setResendingSubmissionId] = useState<string | null>(null);
   const [resendAdminStatusMsg, setResendAdminStatusMsg] = useState<string | null>(null);
 
   const getNormalizedNextStepsEmailStatus = (sub: FormSubmission): 'sent' | 'submitted_only' | 'failed' => {
@@ -219,59 +220,72 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
   };
 
   const handleResendNextStepsEmail = async (sub: FormSubmission) => {
+    if (!sub.id) return;
     setIsResendingAdminEmail(true);
+    setResendingSubmissionId(sub.id);
     setResendAdminStatusMsg(null);
 
+    const messageText = getSubmissionMessage(sub);
+    const payload = {
+      formTitle: 'Next Steps - Connection Card',
+      ownerEmail: 'admin@transformationcitychurch.org',
+      destination: 'save_and_email',
+      recipients: ['admin@transformationcitychurch.org', 'leonandalouw@outlook.com'],
+      answers: {
+        'First Name': sub.firstName || 'Friend',
+        'Last Name': sub.lastName || '',
+        'Email Address': sub.email || 'N/A',
+        'Phone Number': sub.phone || 'Not provided',
+        'Interested In': sub.interestedIn || 'General Interest',
+        'Message / Notes': messageText || 'None'
+      },
+      createdAt: sub.createdAt || new Date().toISOString()
+    };
+
     try {
-      const res = await safeFetchJson('/api/submit-form', {
+      // 1. Try PHP direct script first (native for Hostinger / Apache), fallback to API endpoint
+      let res = await safeFetchJson('/submit-form.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          formTitle: 'Next Steps - Connection Card',
-          ownerEmail: 'admin@transformationcitychurch.org',
-          destination: 'save_and_email',
-          recipients: ['admin@transformationcitychurch.org', 'leonandalouw@outlook.com'],
-          answers: {
-            'First Name': sub.firstName,
-            'Last Name': sub.lastName,
-            'Email Address': sub.email,
-            'Phone Number': sub.phone || 'N/A',
-            'Interested In': sub.interestedIn || 'General Interest',
-            'Message / Notes': getSubmissionMessage(sub) || 'N/A'
-          },
-          createdAt: sub.createdAt || new Date().toISOString()
-        }),
+        body: JSON.stringify(payload),
       });
 
+      if (!res.ok) {
+        res = await safeFetchJson('/api/submit-form', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+      }
+
       if (res.ok && res.data?.success) {
-        setResendAdminStatusMsg('Email successfully dispatched to admin@transformationcitychurch.org & leonandalouw@outlook.com!');
-        if (sub.id) {
-          await updateDoc(doc(db, 'submissions', sub.id), {
-            emailDeliveryStatus: 'sent',
-            emailDispatchedAt: new Date().toISOString(),
-            emailMessageId: res.data.messageId || null,
-            emailError: null
-          }).catch(() => {});
-        }
-        setSelectedSubmission((prev) => prev ? {
+        setResendAdminStatusMsg('Email successfully dispatched via Hostinger SMTP to admin@transformationcitychurch.org & leonandalouw@outlook.com!');
+        await updateDoc(doc(db, 'submissions', sub.id), {
+          emailDeliveryStatus: 'sent',
+          emailDispatchedAt: new Date().toISOString(),
+          emailMessageId: res.data.messageId || 'php-socket-dispatch',
+          emailError: null
+        }).catch(() => {});
+
+        setSelectedSubmission((prev) => prev && prev.id === sub.id ? {
           ...prev,
           emailDeliveryStatus: 'sent',
-          emailDispatchedAt: new Date().toISOString()
-        } : null);
+          emailDispatchedAt: new Date().toISOString(),
+          emailError: null
+        } : prev);
       } else {
-        const errorText = res.error || res.data?.error || 'SMTP delivery issue';
+        const errorText = res.error || res.data?.error || 'Hostinger SMTP delivery issue';
         setResendAdminStatusMsg(`Dispatch failed: ${errorText}`);
-        if (sub.id) {
-          await updateDoc(doc(db, 'submissions', sub.id), {
-            emailDeliveryStatus: 'failed',
-            emailError: errorText
-          }).catch(() => {});
-        }
+        await updateDoc(doc(db, 'submissions', sub.id), {
+          emailDeliveryStatus: 'failed',
+          emailError: errorText
+        }).catch(() => {});
       }
     } catch (err: any) {
       setResendAdminStatusMsg(`Communication error: ${err.message}`);
     } finally {
       setIsResendingAdminEmail(false);
+      setResendingSubmissionId(null);
     }
   };
 
@@ -2377,24 +2391,40 @@ const AdminPortal: React.FC<AdminPortalProps> = ({ onNavigate }) => {
                         </td>
 
                         <td className="py-4 px-6">
-                          {getNormalizedNextStepsEmailStatus(sub) === 'sent' && (
-                            <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 px-2.5 py-1 rounded-full border border-emerald-500/30">
-                              <MailCheck className="w-3 h-3 text-emerald-400" />
-                              <span>Email Sent</span>
-                            </span>
-                          )}
-                          {getNormalizedNextStepsEmailStatus(sub) === 'submitted_only' && (
-                            <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 px-2.5 py-1 rounded-full border border-amber-500/30">
-                              <MailWarning className="w-3 h-3 text-amber-400" />
-                              <span>Submitted Only</span>
-                            </span>
-                          )}
-                          {getNormalizedNextStepsEmailStatus(sub) === 'failed' && (
-                            <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider bg-red-500/20 text-red-300 px-2.5 py-1 rounded-full border border-red-500/30">
-                              <AlertTriangle className="w-3 h-3 text-red-400" />
-                              <span>Failed</span>
-                            </span>
-                          )}
+                          <div className="flex items-center space-x-2">
+                            {getNormalizedNextStepsEmailStatus(sub) === 'sent' && (
+                              <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 px-2.5 py-1 rounded-full border border-emerald-500/30">
+                                <MailCheck className="w-3 h-3 text-emerald-400" />
+                                <span>Email Sent</span>
+                              </span>
+                            )}
+                            {getNormalizedNextStepsEmailStatus(sub) === 'submitted_only' && (
+                              <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-300 px-2.5 py-1 rounded-full border border-amber-500/30">
+                                <MailWarning className="w-3 h-3 text-amber-400" />
+                                <span>Submitted Only</span>
+                              </span>
+                            )}
+                            {getNormalizedNextStepsEmailStatus(sub) === 'failed' && (
+                              <span className="inline-flex items-center space-x-1 text-[10px] font-bold uppercase tracking-wider bg-red-500/20 text-red-300 px-2.5 py-1 rounded-full border border-red-500/30">
+                                <AlertTriangle className="w-3 h-3 text-red-400" />
+                                <span>Failed</span>
+                              </span>
+                            )}
+
+                            {/* Instant Inline Resend Action */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleResendNextStepsEmail(sub);
+                              }}
+                              disabled={resendingSubmissionId === sub.id}
+                              title="Resend email notification via Hostinger SMTP"
+                              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white border border-white/10 transition-colors disabled:opacity-50"
+                            >
+                              <RefreshCw className={`w-3 h-3 text-amber-300 ${resendingSubmissionId === sub.id ? 'animate-spin' : ''}`} />
+                            </button>
+                          </div>
                         </td>
 
                         <td className="py-4 px-6 text-xs text-gray-400 font-mono">

@@ -82,37 +82,49 @@ const NextSteps: React.FC = () => {
 
       // 2. Dispatch to backend API to email church administrators
       try {
-        const res = await safeFetchJson('/api/submit-form', {
+        const payload = {
+          formTitle: 'Start The Journey - Connection Card',
+          ownerEmail: 'admin@transformationcitychurch.org',
+          destination: 'save_and_email',
+          recipients: ['admin@transformationcitychurch.org', 'leonandalouw@outlook.com'],
+          answers: {
+            'First Name': firstName.trim(),
+            'Last Name': lastName.trim(),
+            'Email Address': email.trim().toLowerCase(),
+            'Phone Number': phone.trim() || 'Not provided',
+            'Interested In': interestedInStr,
+            'Message / Notes': trimmedMessage || 'None'
+          },
+          createdAt: submissionPayload.createdAt,
+        };
+
+        // Try native PHP mailer first for Hostinger hosting, then API endpoint
+        let res = await safeFetchJson('/submit-form.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            formTitle: 'Start The Journey - Connection Card',
-            ownerEmail: 'admin@transformationcitychurch.org',
-            destination: 'save_and_email',
-            answers: {
-              'First Name': firstName.trim(),
-              'Last Name': lastName.trim(),
-              'Email Address': email.trim().toLowerCase(),
-              'Phone Number': phone.trim() || 'Not provided',
-              'Interested In': interestedInStr,
-              'Message / Notes': trimmedMessage || 'None'
-            },
-            createdAt: submissionPayload.createdAt,
-          }),
+          body: JSON.stringify(payload),
         });
+
+        if (!res.ok) {
+          res = await safeFetchJson('/api/submit-form', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+        }
 
         if (res.ok && res.data?.success) {
           const sentUpdate = {
             emailDeliveryStatus: 'sent',
             emailDispatchedAt: new Date().toISOString(),
-            emailMessageId: res.data.messageId || null,
+            emailMessageId: res.data.messageId || 'php-socket-dispatch',
             emailError: null
           };
           await updateDoc(doc(db, 'submissions', docRef.id), sentUpdate).catch(() => {});
         } else {
           const failUpdate = {
             emailDeliveryStatus: 'failed',
-            emailError: res.error || res.data?.error || 'API returned failure'
+            emailError: res.error || res.data?.error || 'Hostinger SMTP dispatch issue'
           };
           await updateDoc(doc(db, 'submissions', docRef.id), failUpdate).catch(() => {});
         }
